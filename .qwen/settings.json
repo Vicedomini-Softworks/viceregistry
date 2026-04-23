@@ -25,7 +25,8 @@
       "Bash(} *)",
       "Bash(console.error)",
       "Bash(run)",
-      "Bash(eof)"
+      "Bash(eof)",
+      "Bash(docker compose restart *)"
     ]
   },
   "$version": 3

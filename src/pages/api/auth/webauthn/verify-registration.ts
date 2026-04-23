@@ -44,16 +44,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   if (verification.verified && verification.registrationInfo) {
-    const { credentialID, credentialPublicKey, counter, credentialDeviceType, credentialBackedUp } = verification.registrationInfo
+    const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo
 
     await db.insert(webauthnCredentials).values({
-      id: Buffer.from(credentialID).toString("base64url"),
+      id: credential.id,
       userId,
-      publicKey: Buffer.from(credentialPublicKey).toString("base64url"),
-      counter,
+      publicKey: Buffer.from(credential.publicKey).toString("base64url"),
+      counter: credential.counter,
       deviceType: credentialDeviceType,
       backedUp: credentialBackedUp,
-      transports: body.response.transports?.join(",") || "",
+      transports: credential.transports?.join(",") || "",
     })
 
     await db.update(users).set({ webauthnCurrentChallenge: null }).where(eq(users.id, userId))

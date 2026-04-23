@@ -49,9 +49,9 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       expectedChallenge: user.webauthnCurrentChallenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
-      authenticator: {
-        credentialID: Buffer.from(credential.id, "base64url"),
-        credentialPublicKey: Buffer.from(credential.publicKey, "base64url"),
+      credential: {
+        id: credential.id,
+        publicKey: Buffer.from(credential.publicKey, "base64url"),
         counter: credential.counter,
         transports: credential.transports ? (credential.transports.split(",") as any) : undefined,
       },
