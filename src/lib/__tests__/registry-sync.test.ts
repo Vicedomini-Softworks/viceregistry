@@ -1,0 +1,260 @@
+import { describe, it, expect, vi, beforeEach } from "vitest"
+
+// Hoisted mock functions so they're available in vi.mock factories
+const {
+  mockInsert,
+  mockValues,
+  mockOnConflictDoUpdate,
+  mockSelect,
+  mockLimit,
+  mockListRepositories,
+  mockListTags,
+  mockGetManifest,
+} = vi.hoisted(() => {
+  const mockOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
+  const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflictDoUpdate }))
+  const mockInsert = vi.fn(() => ({ values: mockValues }))
+  const mockLimit = vi.fn().mockResolvedValue([])
+  const mockWhere = vi.fn(() => ({ limit: mockLimit }))
+  const mockFrom = vi.fn(() => ({ where: mockWhere }))
+  const mockSelect = vi.fn(() => ({ from: mockFrom }))
+  const mockListRepositories = vi.fn().mockResolvedValue([])
+  const mockListTags = vi.fn().mockResolvedValue([])
+  const mockGetManifest = vi.fn()
+  return {
+    mockInsert,
+    mockValues,
+    mockOnConflictDoUpdate,
+    mockSelect,
+    mockLimit,
+    mockListRepositories,
+    mockListTags,
+    mockGetManifest,
+  }
+})
+
+vi.mock("@/lib/db", () => ({
+  db: { insert: mockInsert, select: mockSelect },
+}))
+
+vi.mock("@/lib/schema", () => ({
+  repositories: { name: "name", lastSyncedAt: "last_synced_at" },
+  imageMetadata: { repository: "repository", tag: "tag" },
+}))
+
+vi.mock("@/lib/registry-client", () => ({
+  listRepositories: mockListRepositories,
+  listTags: mockListTags,
+  getManifest: mockGetManifest,
+}))
+
+import { syncRepositories, syncRepository, syncAll } from "@/lib/registry-sync"
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockOnConflictDoUpdate.mockResolvedValue(undefined)
+  mockLimit.mockResolvedValue([])
+  mockListRepositories.mockResolvedValue([])
+  mockListTags.mockResolvedValue([])
+})
+
+describe("syncRepositories", () => {
+  it("does nothing when registry returns empty list", async () => {
+    mockListRepositories.mockResolvedValue([])
+    await syncRepositories()
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  it("upserts repository rows when names returned", async () => {
+    mockListRepositories.mockResolvedValue(["repo1", "repo2"])
+    await syncRepositories()
+    expect(mockInsert).toHaveBeenCalled()
+    expect(mockValues).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "repo1" }),
+        expect.objectContaining({ name: "repo2" }),
+      ]),
+    )
+    expect(mockOnConflictDoUpdate).toHaveBeenCalled()
+  })
+})
+
+describe("syncRepository", () => {
+  it("returns early when repo is not stale (synced recently)", async () => {
+    // lastSyncedAt = 1 second ago → not stale
+    mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - 1000) }])
+    await syncRepository("myrepo")
+    expect(mockListTags).not.toHaveBeenCalled()
+  })
+
+  it("syncs when lastSyncedAt is null (missing entry)", async () => {
+    mockLimit.mockResolvedValue([{ lastSyncedAt: null }])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    expect(mockListTags).toHaveBeenCalledWith("myrepo")
+  })
+
+  it("syncs when no repo entry exists in DB", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    expect(mockListTags).toHaveBeenCalledWith("myrepo")
+  })
+
+  it("syncs when lastSyncedAt is older than 5 minutes", async () => {
+    mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - 10 * 60 * 1000) }])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    expect(mockListTags).toHaveBeenCalledWith("myrepo")
+  })
+
+  it("upserts repository with tagCount=0 when no tags", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    // Should call insert for repository upsert at the end
+    expect(mockInsert).toHaveBeenCalled()
+    const lastCall = mockValues.mock.calls[mockValues.mock.calls.length - 1][0]
+    expect(lastCall).toMatchObject({ name: "myrepo", tagCount: 0, sizeBytes: 0 })
+  })
+
+  it("skips imageMetadata upsert when no tags", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    // Only one insert call (for repository), not two
+    expect(mockInsert).toHaveBeenCalledTimes(1)
+  })
+
+  it("upserts imageMetadata rows for ok manifests with layers", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["latest"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        layers: [{ size: 100 }, { size: 200 }],
+        config: { digest: "sha256:abc", os: "linux", architecture: "amd64", created: "2024-01-01T00:00:00Z" },
+      }),
+    })
+    await syncRepository("myrepo")
+    expect(mockInsert).toHaveBeenCalledTimes(2) // imageMetadata + repository
+    const metaCall = mockValues.mock.calls[0][0]
+    expect(metaCall[0]).toMatchObject({
+      repository: "myrepo",
+      tag: "latest",
+      totalSize: 300,
+      os: "linux",
+      architecture: "amd64",
+    })
+  })
+
+  it("uses fsLayers when layers absent", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["v1"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        fsLayers: [{ size: 50 }, { size: 75 }],
+        config: { digest: "sha256:xyz" },
+      }),
+    })
+    await syncRepository("myrepo")
+    const metaCall = mockValues.mock.calls[0][0]
+    expect(metaCall[0]).toMatchObject({ totalSize: 125 })
+  })
+
+  it("skips tags with non-ok manifest responses", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["bad-tag"])
+    mockGetManifest.mockResolvedValue({ ok: false, json: async () => ({}) })
+    await syncRepository("myrepo")
+    // Only repository upsert, no imageMetadata upsert
+    expect(mockInsert).toHaveBeenCalledTimes(1)
+  })
+
+  it("skips rejected promise results from allSettled", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["err-tag"])
+    mockGetManifest.mockRejectedValue(new Error("network error"))
+    await syncRepository("myrepo")
+    expect(mockInsert).toHaveBeenCalledTimes(1) // only repository upsert
+  })
+
+  it("handles manifest with null config fields", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["minimal"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        layers: [],
+        config: {},
+      }),
+    })
+    await syncRepository("myrepo")
+    const metaCall = mockValues.mock.calls[0][0]
+    expect(metaCall[0]).toMatchObject({ os: null, architecture: null, createdAt: null })
+  })
+
+  it("handles manifest with neither layers nor fsLayers", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["empty"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        // no layers, no fsLayers
+        config: { digest: "sha256:abc" },
+      }),
+    })
+    await syncRepository("myrepo")
+    const metaCall = mockValues.mock.calls[0][0]
+    expect(metaCall[0]).toMatchObject({ totalSize: 0 })
+  })
+
+  it("uses 0 for layer size when size field is absent", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["notag"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        layers: [{}], // no size field
+        config: { digest: "sha256:abc" },
+      }),
+    })
+    await syncRepository("myrepo")
+    const metaCall = mockValues.mock.calls[0][0]
+    expect(metaCall[0]).toMatchObject({ totalSize: 0 })
+  })
+
+  it("processes tags in batches (more than 8 tags)", async () => {
+    mockLimit.mockResolvedValue([])
+    const tags = Array.from({ length: 10 }, (_, i) => `tag${i}`)
+    mockListTags.mockResolvedValue(tags)
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      json: async () => ({ layers: [], config: { digest: "sha256:abc" } }),
+    })
+    await syncRepository("myrepo")
+    expect(mockGetManifest).toHaveBeenCalledTimes(10)
+  })
+})
+
+describe("syncAll", () => {
+  it("calls syncRepository for each repo from registry", async () => {
+    // First call (in syncAll) → listRepositories
+    // syncAll calls listRepositories once, then syncRepository for each
+    // syncRepository calls db.select for stale check
+    mockListRepositories.mockResolvedValue(["r1", "r2"])
+    // Make repos appear recently synced so syncRepository exits early
+    mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - 1000) }])
+    await syncAll()
+    expect(mockListRepositories).toHaveBeenCalledTimes(1)
+    // syncRepository was called for r1 and r2, each called db.select
+    expect(mockSelect).toHaveBeenCalledTimes(2)
+  })
+
+  it("does nothing when registry empty", async () => {
+    mockListRepositories.mockResolvedValue([])
+    await syncAll()
+    expect(mockSelect).not.toHaveBeenCalled()
+  })
+})

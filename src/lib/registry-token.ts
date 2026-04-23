@@ -28,7 +28,7 @@ function parseScopeToAccess(scope: string) {
   const parts = scope.split(":")
   if (parts.length < 3) return []
   const [type, name, actionsStr] = parts
-  const actions = actionsStr?.split(",").filter(Boolean) ?? []
+  const actions = actionsStr.split(",").filter(Boolean)
   return [{ type, name, actions }]
 }
 
@@ -37,7 +37,7 @@ export function computeGrantedScope(requestedScope: string, roleNames: string[])
   const parts = requestedScope.split(":")
   if (parts.length < 3) return ""
   const [type, name, actionsStr] = parts
-  const requestedActions = actionsStr?.split(",").filter(Boolean) ?? []
+  const requestedActions = actionsStr.split(",").filter(Boolean)
 
   const isAdmin = roleNames.includes("admin")
   const canPush = isAdmin || roleNames.includes("push")
