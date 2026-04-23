@@ -25,3 +25,6 @@ pnpm-debug.log*
 # RSA keys (generated locally, never commit)
 keys/registry-token.key
 keys/*.key
+
+keys/
+reports/
