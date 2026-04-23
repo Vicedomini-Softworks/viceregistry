@@ -21,3 +21,7 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+# RSA keys (generated locally, never commit)
+keys/registry-token.key
+keys/*.key

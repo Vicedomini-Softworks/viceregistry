@@ -1,0 +1,57 @@
+---
+export const prerender = false
+import AppLayout from "@/layouts/app.astro"
+import UserTable from "@/components/admin/UserTable"
+import { Button } from "@/components/ui/button"
+import { db } from "@/lib/db"
+import { users, userRoles, roles } from "@/lib/schema"
+import { eq, inArray } from "drizzle-orm"
+
+const allUsers = await db
+  .select({
+    id: users.id,
+    username: users.username,
+    email: users.email,
+    isActive: users.isActive,
+    createdAt: users.createdAt,
+  })
+  .from(users)
+  .orderBy(users.createdAt)
+
+const userIds = allUsers.map((u) => u.id)
+const roleAssignments =
+  userIds.length > 0
+    ? await db
+        .select({ userId: userRoles.userId, roleName: roles.name })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(inArray(userRoles.userId, userIds))
+    : []
+
+const rolesByUser = roleAssignments.reduce(
+  (acc, r) => {
+    if (!acc[r.userId]) acc[r.userId] = []
+    acc[r.userId].push(r.roleName)
+    return acc
+  },
+  {} as Record<string, string[]>,
+)
+
+const usersWithRoles = allUsers.map((u) => ({ ...u, roles: rolesByUser[u.id] ?? [], createdAt: u.createdAt.toISOString() }))
+const currentUserId = Astro.locals.user.sub
+---
+
+<AppLayout title="Users">
+  <div class="flex flex-col gap-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold">Users</h1>
+        <p class="text-sm text-muted-foreground mt-1">{usersWithRoles.length} user{usersWithRoles.length === 1 ? "" : "s"}</p>
+      </div>
+      <Button asChild>
+        <a href="/admin/users/new">New user</a>
+      </Button>
+    </div>
+    <UserTable client:load users={usersWithRoles} currentUserId={currentUserId} />
+  </div>
+</AppLayout>

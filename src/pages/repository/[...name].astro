@@ -1,0 +1,39 @@
+---
+export const prerender = false
+import AppLayout from "@/layouts/app.astro"
+import TagList from "@/components/registry/TagList"
+import Breadcrumb from "@/components/layout/Breadcrumb"
+import { listTags } from "@/lib/registry-client"
+
+const name = Astro.params.name ?? ""
+if (!name) return Astro.redirect("/dashboard")
+
+const tags = await listTags(name)
+const registryHost = import.meta.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
+const isAdmin = Astro.locals.user.roles.includes("admin")
+---
+
+<AppLayout title={name}>
+  <div class="flex flex-col gap-6">
+    <Breadcrumb
+      client:load
+      items={[
+        { label: "Repositories", href: "/dashboard" },
+        { label: name },
+      ]}
+    />
+    <div>
+      <h1 class="text-2xl font-semibold font-mono">{name}</h1>
+      <p class="text-sm text-muted-foreground mt-1">
+        {tags.length} tag{tags.length === 1 ? "" : "s"}
+      </p>
+    </div>
+    <TagList
+      client:load
+      name={name}
+      tags={tags}
+      registryHost={registryHost}
+      isAdmin={isAdmin}
+    />
+  </div>
+</AppLayout>

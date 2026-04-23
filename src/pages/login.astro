@@ -1,0 +1,9 @@
+---
+export const prerender = false
+import Layout from "@/layouts/main.astro"
+import LoginForm from "@/components/auth/LoginForm"
+---
+
+<Layout title="Sign in — ViceRegistry">
+  <LoginForm client:load />
+</Layout>

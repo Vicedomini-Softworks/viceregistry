@@ -1,0 +1,67 @@
+---
+export const prerender = false
+import AppLayout from "@/layouts/app.astro"
+import ImageDetail from "@/components/registry/ImageDetail"
+import Breadcrumb from "@/components/layout/Breadcrumb"
+import { getManifest } from "@/lib/registry-client"
+
+const rawPath = Astro.params.path ?? ""
+// Split on last slash to get tag; everything before is the repo name
+const lastSlash = rawPath.lastIndexOf("/")
+if (lastSlash === -1) return Astro.redirect("/dashboard")
+const name = rawPath.slice(0, lastSlash)
+const tag = rawPath.slice(lastSlash + 1)
+if (!name || !tag) return Astro.redirect("/dashboard")
+
+const registryHost = import.meta.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
+
+let manifest: Record<string, unknown> = {}
+let digest = ""
+let createdAt: string | undefined
+let os: string | undefined
+let architecture: string | undefined
+
+try {
+  const res = await getManifest(name, tag)
+  digest = res.headers.get("Docker-Content-Digest") ?? ""
+  manifest = await res.json()
+} catch {
+  // manifest fetch failed — show empty state
+}
+
+const layers = (
+  (manifest.layers ?? manifest.fsLayers ?? []) as Array<Record<string, unknown>>
+).map((l) => ({
+  digest: (l.digest ?? l.blobSum ?? "") as string,
+  size: (l.size ?? 0) as number,
+  mediaType: (l.mediaType ?? "") as string,
+}))
+---
+
+<AppLayout title={`${name}:${tag}`}>
+  <div class="flex flex-col gap-6">
+    <Breadcrumb
+      client:load
+      items={[
+        { label: "Repositories", href: "/dashboard" },
+        { label: name, href: `/repository/${name}` },
+        { label: tag },
+      ]}
+    />
+    <div>
+      <h1 class="text-2xl font-semibold font-mono">{name}:<span class="text-primary">{tag}</span></h1>
+    </div>
+    <ImageDetail
+      client:load
+      name={name}
+      tag={tag}
+      digest={digest}
+      mediaType={(manifest.mediaType ?? "") as string}
+      layers={layers}
+      registryHost={registryHost}
+      createdAt={createdAt}
+      os={os}
+      architecture={architecture}
+    />
+  </div>
+</AppLayout>

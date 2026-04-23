@@ -1,0 +1,46 @@
+---
+export const prerender = false
+import AppLayout from "@/layouts/app.astro"
+import UserForm from "@/components/admin/UserForm"
+import Breadcrumb from "@/components/layout/Breadcrumb"
+import { db } from "@/lib/db"
+import { users, userRoles, roles } from "@/lib/schema"
+import { eq } from "drizzle-orm"
+
+const { id } = Astro.params
+const isNew = id === "new"
+
+let user: { id: string; username: string; email: string; isActive: boolean; roles: string[] } | undefined
+
+if (!isNew) {
+  const [found] = await db
+    .select({ id: users.id, username: users.username, email: users.email, isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, id!))
+    .limit(1)
+
+  if (!found) return Astro.redirect("/admin/users")
+
+  const roleRows = await db
+    .select({ name: roles.name })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(eq(userRoles.userId, found.id))
+
+  user = { ...found, roles: roleRows.map((r) => r.name) }
+}
+---
+
+<AppLayout title={isNew ? "New user" : `Edit ${user?.username}`}>
+  <div class="flex flex-col gap-6">
+    <Breadcrumb
+      client:load
+      items={[
+        { label: "Users", href: "/admin/users" },
+        { label: isNew ? "New user" : (user?.username ?? "") },
+      ]}
+    />
+    <h1 class="text-2xl font-semibold">{isNew ? "New user" : `Edit ${user?.username}`}</h1>
+    <UserForm client:load mode={isNew ? "create" : "edit"} user={user} />
+  </div>
+</AppLayout>

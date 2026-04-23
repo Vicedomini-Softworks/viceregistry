@@ -1,0 +1,25 @@
+---
+export const prerender = false
+import AppLayout from "@/layouts/app.astro"
+import RepositoryList from "@/components/registry/RepositoryList"
+import { listRepositories } from "@/lib/registry-client"
+
+const repositories = await listRepositories()
+const registryHost = import.meta.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
+---
+
+<AppLayout title="Dashboard">
+  <div class="flex flex-col gap-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Repositories</h1>
+      <p class="text-sm text-muted-foreground mt-1">
+        {repositories.length} repositor{repositories.length === 1 ? "y" : "ies"} in your registry
+      </p>
+    </div>
+    <RepositoryList
+      client:load
+      repositories={repositories}
+      registryHost={registryHost}
+    />
+  </div>
+</AppLayout>
