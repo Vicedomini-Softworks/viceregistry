@@ -4,7 +4,7 @@ import type { AstroCookies } from "astro"
 const SESSION_EXPIRY = "8h"
 
 function getSecret() {
-  const secret = import.meta.env.SESSION_SECRET
+  const secret = process.env.SESSION_SECRET
   if (!secret) throw new Error("SESSION_SECRET env var is required")
   return new TextEncoder().encode(secret)
 }
@@ -27,7 +27,7 @@ export async function verifySessionToken(token: string): Promise<SessionPayload>
 export function setSessionCookie(cookies: AstroCookies, token: string) {
   cookies.set("session", token, {
     httpOnly: true,
-    secure: import.meta.env.PROD,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 8,

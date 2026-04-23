@@ -2,7 +2,7 @@ name: Build and Publish to GHCR
 
 on:
   push:
-    branches: [ main ]
+    branches: [ '**' ]
     tags: [ 'v*' ]
 
 env:
@@ -37,6 +37,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha,format=short,prefix=
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5

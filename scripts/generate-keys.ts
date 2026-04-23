@@ -5,6 +5,7 @@ import { join } from "path"
 async function main() {
   const { privateKey, publicKey } = await generateKeyPair("RS256", {
     modulusLength: 4096,
+    extractable: true,
   })
 
   const privatePem = await exportPKCS8(privateKey)

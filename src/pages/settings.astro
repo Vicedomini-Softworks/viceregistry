@@ -40,7 +40,7 @@ const { user } = Astro.locals
       <CardContent class="flex flex-col gap-2">
         <p class="text-sm text-muted-foreground">Run this command to authenticate your Docker client:</p>
         <code class="rounded-md bg-muted px-3 py-2 font-mono text-sm block">
-          docker login {import.meta.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"}
+          docker login {process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"}
         </code>
         <p class="text-xs text-muted-foreground">Use your ViceRegistry username and password.</p>
       </CardContent>

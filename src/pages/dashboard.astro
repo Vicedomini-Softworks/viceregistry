@@ -21,7 +21,7 @@ const allRepos = await db
   .from(repositories)
   .orderBy(asc(repositories.name))
 
-const registryHost = import.meta.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
+const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
 const isAdmin = Astro.locals.user?.roles.includes("admin") ?? false
 ---
 

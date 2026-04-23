@@ -1,4 +1,4 @@
-const REGISTRY_URL = import.meta.env.REGISTRY_URL ?? "http://localhost:5000"
+const REGISTRY_URL = process.env.REGISTRY_URL ?? "http://localhost:5000"
 
 const MANIFEST_ACCEPT =
   "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json"

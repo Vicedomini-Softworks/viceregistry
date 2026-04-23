@@ -7,7 +7,7 @@ export interface TokenClaims {
 }
 
 export async function issueRegistryToken(claims: TokenClaims): Promise<string> {
-  const rawKey = import.meta.env.REGISTRY_TOKEN_PRIVATE_KEY
+  const rawKey = process.env.REGISTRY_TOKEN_PRIVATE_KEY
   if (!rawKey) throw new Error("REGISTRY_TOKEN_PRIVATE_KEY env var is required")
   const privateKeyPem = rawKey.replace(/\\n/g, "\n")
   const privateKey = await importPKCS8(privateKeyPem, "RS256")
@@ -19,7 +19,7 @@ export async function issueRegistryToken(claims: TokenClaims): Promise<string> {
     .setIssuedAt()
     .setExpirationTime("5m")
     .setAudience(claims.service)
-    .setIssuer(import.meta.env.REGISTRY_TOKEN_ISSUER ?? "viceregistry")
+    .setIssuer(process.env.REGISTRY_TOKEN_ISSUER ?? "viceregistry")
     .sign(privateKey)
 }
 

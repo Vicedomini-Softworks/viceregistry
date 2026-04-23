@@ -15,7 +15,7 @@ const name = rawPath.slice(0, lastSlash)
 const tag = rawPath.slice(lastSlash + 1)
 if (!name || !tag) return Astro.redirect("/dashboard")
 
-const registryHost = import.meta.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
+const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
 
 // Load metadata from PG (may be null if not yet synced)
 const [pgMeta] = await db
