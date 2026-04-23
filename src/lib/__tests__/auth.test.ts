@@ -53,19 +53,30 @@ describe("auth", () => {
   })
 
   describe("setSessionCookie", () => {
-    it("calls cookies.set with correct options", () => {
+    it("calls cookies.set with correct options in non-production", () => {
+      vi.stubEnv("NODE_ENV", "development")
       const cookies = makeCookies()
       setSessionCookie(cookies as any, "my-token")
-      expect(cookies.set).toHaveBeenCalledWith(
-        "session",
-        "my-token",
-        expect.objectContaining({
-          httpOnly: true,
-          sameSite: "lax",
-          path: "/",
-          maxAge: 60 * 60 * 8,
-        }),
-      )
+      expect(cookies.set).toHaveBeenCalledWith("session", "my-token", {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 8,
+      })
+    })
+
+    it("calls cookies.set with secure: true in production", () => {
+      vi.stubEnv("NODE_ENV", "production")
+      const cookies = makeCookies()
+      setSessionCookie(cookies as any, "my-token")
+      expect(cookies.set).toHaveBeenCalledWith("session", "my-token", {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 8,
+      })
     })
   })
 

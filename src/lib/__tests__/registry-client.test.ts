@@ -9,9 +9,13 @@ import {
 } from "@/lib/registry-client"
 
 function mockFetch(ok: boolean, body: unknown, headers: Record<string, string> = {}) {
+  const jsonMock = vi.fn().mockImplementation(async () => {
+    if (!ok) throw new Error("Should not call json() on non-ok response")
+    return body
+  })
   return vi.fn().mockResolvedValue({
     ok,
-    json: async () => body,
+    json: jsonMock,
     headers: {
       get: (key: string) => headers[key] ?? null,
     },
@@ -47,7 +51,7 @@ describe("registry-client", () => {
       vi.stubGlobal("fetch", fetchMock)
       await listRepositories()
       const [url] = fetchMock.mock.calls[0]
-      expect(url).toContain("/v2/_catalog?n=1000")
+      expect(url).toBe("http://localhost:5000/v2/_catalog?n=1000")
     })
   })
 
@@ -69,6 +73,14 @@ describe("registry-client", () => {
       const result = await listTags("myrepo")
       expect(result).toEqual([])
     })
+
+    it("calls correct URL path", async () => {
+      const fetchMock = mockFetch(true, { tags: [] })
+      vi.stubGlobal("fetch", fetchMock)
+      await listTags("myrepo")
+      const [url] = fetchMock.mock.calls[0]
+      expect(url).toBe("http://localhost:5000/v2/myrepo/tags/list")
+    })
   })
 
   describe("getManifest", () => {
@@ -77,6 +89,14 @@ describe("registry-client", () => {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeRes))
       const res = await getManifest("myrepo", "latest")
       expect(res).toBe(fakeRes)
+    })
+
+    it("calls correct URL path", async () => {
+      const fetchMock = mockFetch(true, {})
+      vi.stubGlobal("fetch", fetchMock)
+      await getManifest("myrepo", "latest")
+      const [url] = fetchMock.mock.calls[0]
+      expect(url).toBe("http://localhost:5000/v2/myrepo/manifests/latest")
     })
   })
 
@@ -96,36 +116,39 @@ describe("registry-client", () => {
       expect(digest).toBeNull()
     })
 
-    it("calls fetch with HEAD method", async () => {
+    it("calls fetch with HEAD method and correct URL", async () => {
       const fetchMock = mockFetch(true, null)
       vi.stubGlobal("fetch", fetchMock)
       await getManifestDigest("myrepo", "latest")
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ method: "HEAD" }),
-      )
+      const [url, opts] = fetchMock.mock.calls[0]
+      expect(url).toBe("http://localhost:5000/v2/myrepo/manifests/latest")
+      expect(opts.method).toBe("HEAD")
     })
   })
 
   describe("deleteManifest", () => {
-    it("calls fetch with DELETE method", async () => {
+    it("calls fetch with DELETE method and correct URL", async () => {
       const fetchMock = mockFetch(true, null)
       vi.stubGlobal("fetch", fetchMock)
       await deleteManifest("myrepo", "sha256:deadbeef")
       const [url, opts] = fetchMock.mock.calls[0]
-      expect(url).toContain("/v2/myrepo/manifests/sha256:deadbeef")
+      expect(url).toBe("http://localhost:5000/v2/myrepo/manifests/sha256:deadbeef")
       expect(opts.method).toBe("DELETE")
     })
   })
 
   describe("proxyRegistryRequest", () => {
-    it("passes through to registryFetch with Accept header", async () => {
+    it("passes through to registryFetch with Accept header and merges custom headers", async () => {
       const fetchMock = mockFetch(true, {})
       vi.stubGlobal("fetch", fetchMock)
-      await proxyRegistryRequest("/some/path", { method: "GET" })
+      await proxyRegistryRequest("/some/path", { method: "GET", headers: { "X-Custom": "1" } })
       const [url, opts] = fetchMock.mock.calls[0]
-      expect(url).toContain("/v2/some/path")
-      expect(opts.headers).toHaveProperty("Accept")
+      expect(url).toBe("http://localhost:5000/v2/some/path")
+      expect(opts.headers).toEqual({
+        Accept:
+          "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json",
+        "X-Custom": "1",
+      })
     })
   })
 })

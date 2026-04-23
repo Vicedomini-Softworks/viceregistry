@@ -59,7 +59,8 @@ export async function syncRepository(name: string): Promise<void> {
     )
 
     for (const result of results) {
-      if (result.status !== "fulfilled" || !result.value) continue
+      if (result.status === "rejected") continue
+      if (!result.value) continue
       const { tag, manifest } = result.value
 
       const layers = (

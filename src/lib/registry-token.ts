@@ -1,4 +1,7 @@
 import { SignJWT, importPKCS8 } from "jose"
+import { db } from "@/lib/db"
+import { groupRepositories, groupUsers } from "@/lib/schema"
+import { eq, and } from "drizzle-orm"
 
 export interface TokenClaims {
   subject: string
@@ -31,16 +34,39 @@ function parseScopeToAccess(scope: string) {
   return [{ type, name, actions }]
 }
 
-export function computeGrantedScope(requestedScope: string, roleNames: string[]): string {
+export async function computeGrantedScope(requestedScope: string, roleNames: string[], userId?: string): Promise<string> {
   if (!requestedScope) return ""
   const parts = requestedScope.split(":")
   if (parts.length < 3) return ""
   const [type, name, actionsStr] = parts
   const requestedActions = actionsStr.split(",").filter(Boolean)
 
-  const isAdmin = roleNames.includes("admin")
-  const canPush = isAdmin || roleNames.includes("push")
-  const canPull = canPush || roleNames.includes("viewer")
+  let isAdmin = roleNames.includes("admin")
+  let canPush = isAdmin || roleNames.includes("push")
+  let canPull = canPush || roleNames.includes("viewer")
+
+  if (userId && type === "repository") {
+    const groupAccess = await db
+      .select({ role: groupUsers.role })
+      .from(groupRepositories)
+      .innerJoin(groupUsers, eq(groupRepositories.groupId, groupUsers.groupId))
+      .where(and(eq(groupRepositories.repositoryName, name), eq(groupUsers.userId, userId)))
+      .limit(1)
+
+    if (groupAccess.length > 0) {
+      const gRole = groupAccess[0].role
+      if (gRole === "owner" || gRole === "admin") {
+        isAdmin = true
+        canPush = true
+        canPull = true
+      } else if (gRole === "push") {
+        canPush = true
+        canPull = true
+      } else if (gRole === "member" || gRole === "pull") {
+        canPull = true
+      }
+    }
+  }
 
   const granted = requestedActions.filter((a) => {
     if (a === "pull") return canPull

@@ -4,15 +4,11 @@
       "Bash(npx *)",
       "Bash(mkdir *)",
       "Bash(npm run *)",
-      "Bash(docker-compose *)",
-      "Bash(docker compose config)",
-      "Bash(cp *)",
-      "Bash(docker run *)",
-      "Bash(docker compose logs *)",
-      "Bash(docker compose ps)",
+      "Bash(docker *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(npm *)"
     ]
   },
   "$version": 3

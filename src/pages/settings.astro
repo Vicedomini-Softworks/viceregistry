@@ -3,6 +3,7 @@ export const prerender = false
 import AppLayout from "@/layouts/app.astro"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Fingerprint } from "lucide-react"
 
 const { user } = Astro.locals
 ---
@@ -22,12 +23,86 @@ const { user } = Astro.locals
           <span class="font-medium">{user.username}</span>
         </div>
         <div class="flex flex-col gap-0.5">
-          <span class="text-xs text-muted-foreground">Email</span>
-          <span>{user.email}</span>
-        </div>
-        <div class="flex flex-col gap-0.5">
           <span class="text-xs text-muted-foreground">Roles</span>
           <span class="capitalize">{user.roles.join(", ")}</span>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Security</CardTitle>
+        <CardDescription>Manage your passkeys</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button id="register-passkey-btn" variant="outline">
+          <Fingerprint class="mr-2 h-4 w-4" />
+          Register New Passkey
+        </Button>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Update Profile</CardTitle>
+        <CardDescription>Change your email or password</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form id="settings-form" class="flex flex-col gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label for="email" class="text-sm font-medium">Email</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              value={user.email}
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="currentPassword" class="text-sm font-medium">Current Password</label>
+            <input
+              id="currentPassword"
+              name="currentPassword"
+              type="password"
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="newPassword" class="text-sm font-medium">New Password</label>
+            <input
+              id="newPassword"
+              name="newPassword"
+              type="password"
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+          <Button type="submit" id="save-btn">Save Changes</Button>
+        </form>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Access Tokens</CardTitle>
+        <CardDescription>Generate tokens for Docker CLI</CardDescription>
+      </CardHeader>
+      <CardContent class="flex flex-col gap-4">
+        <form id="token-form" class="flex gap-2">
+          <input
+            id="token-name"
+            name="name"
+            type="text"
+            placeholder="Token name (e.g., CI/CD)"
+            required
+            class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <Button type="submit" id="generate-token-btn">Generate</Button>
+        </form>
+        <div id="new-token-container" class="hidden flex-col gap-2 p-4 bg-muted rounded-md">
+          <p class="text-sm font-medium">Your new access token:</p>
+          <code id="new-token-value" class="text-sm break-all"></code>
+          <p class="text-xs text-muted-foreground">Copy this token now. You won't be able to see it again.</p>
         </div>
       </CardContent>
     </Card>
@@ -46,4 +121,110 @@ const { user } = Astro.locals
       </CardContent>
     </Card>
   </div>
+
+  <script>
+    import { toast } from "sonner"
+    import { startRegistration } from "@simplewebauthn/browser"
+
+    const form = document.getElementById("settings-form") as HTMLFormElement
+    const btn = document.getElementById("save-btn") as HTMLButtonElement
+    const passkeyBtn = document.getElementById("register-passkey-btn") as HTMLButtonElement
+
+    passkeyBtn?.addEventListener("click", async () => {
+      passkeyBtn.disabled = true
+      try {
+        const optsRes = await fetch("/api/auth/webauthn/generate-registration-options")
+        if (!optsRes.ok) throw new Error((await optsRes.json()).error || "Failed to get options")
+        const options = await optsRes.json()
+
+        const regResp = await startRegistration({ optionsJSON: options })
+
+        const verifyRes = await fetch("/api/auth/webauthn/verify-registration", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(regResp),
+        })
+
+        if (!verifyRes.ok) throw new Error((await verifyRes.json()).error || "Verification failed")
+        
+        toast.success("Passkey registered successfully")
+      } catch (err: any) {
+        toast.error(err.message || "Failed to register passkey")
+      } finally {
+        passkeyBtn.disabled = false
+      }
+    })
+
+    const tokenForm = document.getElementById("token-form") as HTMLFormElement
+    const tokenBtn = document.getElementById("generate-token-btn") as HTMLButtonElement
+    const tokenContainer = document.getElementById("new-token-container") as HTMLDivElement
+    const tokenValue = document.getElementById("new-token-value") as HTMLElement
+
+    tokenForm?.addEventListener("submit", async (e) => {
+      e.preventDefault()
+      tokenBtn.disabled = true
+      tokenBtn.textContent = "Generating..."
+
+      const formData = new FormData(tokenForm)
+      const name = formData.get("name")
+
+      try {
+        const res = await fetch("/api/auth/access-tokens", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        })
+
+        if (!res.ok) throw new Error((await res.json()).error || "Failed to generate token")
+        
+        const data = await res.json()
+        tokenValue.textContent = data.token
+        tokenContainer.classList.remove("hidden")
+        tokenContainer.classList.add("flex")
+        tokenForm.reset()
+        toast.success("Access token generated")
+      } catch (err: any) {
+        toast.error(err.message || "Failed to generate token")
+      } finally {
+        tokenBtn.disabled = false
+        tokenBtn.textContent = "Generate"
+      }
+    })
+
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault()
+      btn.disabled = true
+      btn.textContent = "Saving..."
+
+      const formData = new FormData(form)
+      const data: Record<string, string> = {}
+      formData.forEach((value, key) => {
+        if (value) data[key] = value.toString()
+      })
+
+      try {
+        const res = await fetch("/api/auth/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        })
+
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || "Failed to update settings")
+        }
+
+        toast.success("Settings updated successfully")
+        form.reset()
+        // restore email
+        const emailInput = document.getElementById("email") as HTMLInputElement
+        if (data.email) emailInput.value = data.email
+      } catch (err: any) {
+        toast.error(err.message)
+      } finally {
+        btn.disabled = false
+        btn.textContent = "Save Changes"
+      }
+    })
+  </script>
 </AppLayout>

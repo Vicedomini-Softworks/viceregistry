@@ -15,6 +15,13 @@
       "when": 1776915619412,
       "tag": "0001_green_warbound",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776941726991,
+      "tag": "0002_soft_molecule_man",
+      "breakpoints": true
     }
   ]
 }

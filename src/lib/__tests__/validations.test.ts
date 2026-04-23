@@ -87,7 +87,24 @@ describe("updateUserSchema", () => {
   })
 
   it("rejects empty object (no fields provided)", () => {
-    expect(updateUserSchema.safeParse({}).success).toBe(false)
+    const result = updateUserSchema.safeParse({})
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe("At least one field must be provided")
+    }
+  })
+
+  it("rejects object with only undefined values", () => {
+    const result = updateUserSchema.safeParse({ email: undefined, isActive: undefined })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe("At least one field must be provided")
+    }
+  })
+
+  it("rejects invalid roles", () => {
+    expect(updateUserSchema.safeParse({ roles: ["invalid"] }).success).toBe(false)
+    expect(updateUserSchema.safeParse({ roles: [""] }).success).toBe(false)
   })
 
   it("rejects invalid email format", () => {
@@ -114,7 +131,11 @@ describe("updateSettingsSchema", () => {
   })
 
   it("rejects newPassword without currentPassword", () => {
-    expect(updateSettingsSchema.safeParse({ newPassword: "newpassword" }).success).toBe(false)
+    const result = updateSettingsSchema.safeParse({ newPassword: "newpassword" })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe("currentPassword required to set newPassword")
+    }
   })
 
   it("accepts empty object (all optional)", () => {

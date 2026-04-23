@@ -75,7 +75,12 @@ describe("syncRepositories", () => {
         expect.objectContaining({ name: "repo2" }),
       ]),
     )
-    expect(mockOnConflictDoUpdate).toHaveBeenCalled()
+    expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: expect.anything(),
+        set: expect.objectContaining({ lastSyncedAt: expect.any(Date) }),
+      })
+    )
   })
 })
 
@@ -85,6 +90,7 @@ describe("syncRepository", () => {
     mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - 1000) }])
     await syncRepository("myrepo")
     expect(mockListTags).not.toHaveBeenCalled()
+    expect(mockSelect).toHaveBeenCalledWith(expect.objectContaining({ lastSyncedAt: expect.anything() }))
   })
 
   it("syncs when lastSyncedAt is null (missing entry)", async () => {
@@ -116,6 +122,17 @@ describe("syncRepository", () => {
     expect(mockInsert).toHaveBeenCalled()
     const lastCall = mockValues.mock.calls[mockValues.mock.calls.length - 1][0]
     expect(lastCall).toMatchObject({ name: "myrepo", tagCount: 0, sizeBytes: 0 })
+    
+    expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: "name",
+        set: expect.objectContaining({
+          tagCount: 0,
+          sizeBytes: 0,
+          lastSyncedAt: expect.any(Date),
+        })
+      })
+    )
   })
 
   it("skips imageMetadata upsert when no tags", async () => {
@@ -146,6 +163,23 @@ describe("syncRepository", () => {
       os: "linux",
       architecture: "amd64",
     })
+    const repoCall = mockValues.mock.calls[1][0]
+    expect(repoCall).toMatchObject({ name: "myrepo", tagCount: 1, sizeBytes: 300 })
+    
+    // Verify onConflictDoUpdate for imageMetadata
+    expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: ["repository", "tag"],
+        set: expect.objectContaining({
+          digest: expect.anything(),
+          totalSize: expect.anything(),
+          os: expect.anything(),
+          architecture: expect.anything(),
+          createdAt: expect.anything(),
+          lastSyncedAt: expect.anything(),
+        })
+      })
+    )
   })
 
   it("uses fsLayers when layers absent", async () => {
@@ -195,6 +229,20 @@ describe("syncRepository", () => {
     expect(metaCall[0]).toMatchObject({ os: null, architecture: null, createdAt: null })
   })
 
+  it("handles manifest with missing config object", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["noconfig"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        layers: [],
+      }),
+    })
+    await syncRepository("myrepo")
+    const metaCall = mockValues.mock.calls[0][0]
+    expect(metaCall[0]).toMatchObject({ os: null, architecture: null, createdAt: null, digest: undefined })
+  })
+
   it("handles manifest with neither layers nor fsLayers", async () => {
     mockLimit.mockResolvedValue([])
     mockListTags.mockResolvedValue(["empty"])
@@ -233,8 +281,11 @@ describe("syncRepository", () => {
       ok: true,
       json: async () => ({ layers: [], config: { digest: "sha256:abc" } }),
     })
+    const allSettledSpy = vi.spyOn(Promise, "allSettled")
     await syncRepository("myrepo")
     expect(mockGetManifest).toHaveBeenCalledTimes(10)
+    expect(allSettledSpy).toHaveBeenCalledTimes(2) // 10 tags / 8 = 2 batches
+    allSettledSpy.mockRestore()
   })
 })
 

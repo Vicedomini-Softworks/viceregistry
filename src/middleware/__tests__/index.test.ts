@@ -108,6 +108,13 @@ describe("middleware", () => {
       await (onRequest as Function)(ctx, next)
       expect(next).toHaveBeenCalled()
     })
+
+    it("does not treat prefix matches without slash as public", async () => {
+      const { ctx } = makeCtx("/login-fake")
+      await (onRequest as Function)(ctx, next)
+      expect(next).not.toHaveBeenCalled()
+      expect(ctx.redirect).toHaveBeenCalledWith("/login")
+    })
   })
 
   describe("unauthenticated access to protected routes", () => {

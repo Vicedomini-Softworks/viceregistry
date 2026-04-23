@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, Fingerprint } from "lucide-react"
+import { startAuthentication } from "@simplewebauthn/browser"
 
 export default function LoginForm() {
   const [username, setUsername] = useState("")
@@ -33,6 +34,44 @@ export default function LoginForm() {
       setError(data.error ?? "Login failed")
     } catch {
       setError("Network error, please try again")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleWebAuthnLogin = async () => {
+    if (!username) {
+      setError("Please enter your username first")
+      return
+    }
+    setError("")
+    setLoading(true)
+
+    try {
+      const optsRes = await fetch("/api/auth/webauthn/generate-authentication-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      })
+      if (!optsRes.ok) throw new Error((await optsRes.json()).error || "Failed to get options")
+      const options = await optsRes.json()
+
+      const authResp = await startAuthentication({ optionsJSON: options })
+
+      const verifyRes = await fetch("/api/auth/webauthn/verify-authentication", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, response: authResp }),
+      })
+
+      if (verifyRes.ok) {
+        window.location.href = "/dashboard"
+        return
+      }
+
+      throw new Error((await verifyRes.json()).error || "Verification failed")
+    } catch (err: any) {
+      setError(err.message || "Passkey login failed")
     } finally {
       setLoading(false)
     }
@@ -76,11 +115,22 @@ export default function LoginForm() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
               />
             </div>
             <Button type="submit" disabled={loading} className="w-full">
               {loading ? "Signing in…" : "Sign in"}
+            </Button>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">Or</span>
+              </div>
+            </div>
+            <Button type="button" variant="outline" onClick={handleWebAuthnLogin} disabled={loading} className="w-full">
+              <Fingerprint className="mr-2 h-4 w-4" />
+              Sign in with Passkey
             </Button>
           </form>
         </CardContent>
