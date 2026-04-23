@@ -11,6 +11,13 @@ const { mockSelect, mockLimit } = vi.hoisted(() => {
   return { mockSelect, mockLimit }
 })
 
+vi.mock("jose", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("jose")>()
+  return {
+    ...actual,
+    importPKCS8: vi.fn(actual.importPKCS8),
+  }
+})
 vi.mock("@/lib/db", () => ({
   db: {
     select: mockSelect,
@@ -52,6 +59,19 @@ describe("issueRegistryToken", () => {
     ).rejects.toThrow("REGISTRY_TOKEN_PRIVATE_KEY env var is required")
   })
 
+  it("handles newlines in private key correctly", async () => {
+    const rawKey = privatePem.replace(/\n/g, "\\n")
+    vi.stubEnv("REGISTRY_TOKEN_PRIVATE_KEY", rawKey)
+    const token = await issueRegistryToken({ subject: "alice", service: "svc", scope: "" })
+    expect(typeof token).toBe("string")
+  })
+
+  it("handles empty newlines in private key correctly", async () => {
+    const rawKey = privatePem.replace(/\n/g, "")
+    vi.stubEnv("REGISTRY_TOKEN_PRIVATE_KEY", rawKey)
+    await expect(issueRegistryToken({ subject: "alice", service: "svc", scope: "" })).rejects.toThrow()
+  })
+
   it("produces access: [] for empty scope", async () => {
     const token = await issueRegistryToken({ subject: "alice", service: "svc", scope: "" })
     const { payload } = await jwtVerify(token, publicKey)
@@ -80,6 +100,30 @@ describe("issueRegistryToken", () => {
     ])
   })
 
+  it("parses valid scope into access array with empty actions", async () => {
+    const token = await issueRegistryToken({
+      subject: "alice",
+      service: "svc",
+      scope: "repository:myrepo:",
+    })
+    const { payload } = await jwtVerify(token, publicKey)
+    expect(payload.access).toEqual([
+      { type: "repository", name: "myrepo", actions: [] },
+    ])
+  })
+
+  it("filters out empty actions when parsing scope", async () => {
+    const token = await issueRegistryToken({
+      subject: "alice",
+      service: "svc",
+      scope: "repository:myrepo:pull,,push,",
+    })
+    const { payload } = await jwtVerify(token, publicKey)
+    expect(payload.access).toEqual([
+      { type: "repository", name: "myrepo", actions: ["pull", "push"] },
+    ])
+  })
+
   it("uses REGISTRY_TOKEN_ISSUER env", async () => {
     const token = await issueRegistryToken({ subject: "alice", service: "svc", scope: "" })
     const { payload } = await jwtVerify(token, publicKey, { issuer: "test-issuer" })
@@ -98,6 +142,14 @@ describe("issueRegistryToken", () => {
 describe("computeGrantedScope", () => {
   it("returns empty string for empty scope", async () => {
     expect(await computeGrantedScope("", ["admin"])).toBe("")
+  })
+
+  it("returns empty string for falsey scope", async () => {
+    expect(await computeGrantedScope(false as any, ["admin"])).toBe("")
+  })
+
+  it("returns empty string for undefined scope", async () => {
+    expect(await computeGrantedScope(undefined as any, ["admin"])).toBe("")
   })
 
   it("returns empty string for scope with fewer than 3 parts", async () => {
@@ -135,30 +187,57 @@ describe("computeGrantedScope", () => {
   it("grants owner group role all actions", async () => {
     mockLimit.mockResolvedValueOnce([{ role: "owner" }])
     expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull,push,delete,*")
+    expect(mockSelect).toHaveBeenCalled()
   })
 
   it("grants admin group role all actions", async () => {
     mockLimit.mockResolvedValueOnce([{ role: "admin" }])
     expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull,push,delete,*")
+    expect(mockSelect).toHaveBeenCalled()
   })
 
   it("grants push group role push and pull", async () => {
     mockLimit.mockResolvedValueOnce([{ role: "push" }])
     expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull,push")
+    expect(mockSelect).toHaveBeenCalled()
   })
 
   it("grants member group role pull", async () => {
     mockLimit.mockResolvedValueOnce([{ role: "member" }])
     expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull")
+    expect(mockSelect).toHaveBeenCalled()
   })
 
   it("grants pull group role pull", async () => {
     mockLimit.mockResolvedValueOnce([{ role: "pull" }])
     expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull")
+    expect(mockSelect).toHaveBeenCalled()
   })
 
   it("grants nothing for unknown group role", async () => {
     mockLimit.mockResolvedValueOnce([{ role: "unknown" }])
     expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("")
+  })
+
+  it("handles missing userId correctly", async () => {
+    expect(await computeGrantedScope("repository:r:pull", [], undefined)).toBe("")
+  })
+
+  it("handles missing userId correctly (true)", async () => {
+    expect(await computeGrantedScope("repository:r:pull", [], true as any)).toBe("")
+  })
+
+  it("handles non-repository type correctly", async () => {
+    expect(await computeGrantedScope("registry:catalog:*", [], "user1")).toBe("")
+  })
+
+  it("handles empty group access correctly", async () => {
+    mockLimit.mockResolvedValueOnce([])
+    expect(await computeGrantedScope("repository:r:pull", [], "user1")).toBe("")
+  })
+
+  it("handles empty group access correctly (negative length)", async () => {
+    mockLimit.mockResolvedValueOnce({ length: -1 } as any)
+    expect(await computeGrantedScope("repository:r:pull", [], "user1")).toBe("")
   })
 })

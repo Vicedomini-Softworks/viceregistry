@@ -65,6 +65,12 @@ describe("middleware", () => {
       expect(next).toHaveBeenCalled()
     })
 
+    it("calls next() with no session on /login (empty cookie)", async () => {
+      const { ctx } = makeCtx("/login", { sessionToken: "" })
+      await (onRequest as Function)(ctx, next)
+      expect(next).toHaveBeenCalled()
+    })
+
     it("attaches user from valid session on public route /dashboard", async () => {
       const { ctx } = makeCtx("/dashboard", {
         sessionToken: "valid.tok.en",
@@ -124,6 +130,7 @@ describe("middleware", () => {
       expect(res.status).toBe(401)
       const body = await res.json()
       expect(body.error).toBe("Unauthorized")
+      expect(res.headers.get("Content-Type")).toBe("application/json")
     })
 
     it("redirects to /login for unauthenticated page request", async () => {
@@ -138,6 +145,9 @@ describe("middleware", () => {
       const { ctx } = makeCtx("/api/registry/myrepo/manifests/sha256:abc", { method: "DELETE" })
       const res = await (onRequest as Function)(ctx, next)
       expect(res.status).toBe(401)
+      const body = await res.json()
+      expect(body.error).toBe("Forbidden")
+      expect(res.headers.get("Content-Type")).toBe("application/json")
     })
 
     it("returns 403 when non-admin user", async () => {
@@ -148,6 +158,9 @@ describe("middleware", () => {
       })
       const res = await (onRequest as Function)(ctx, next)
       expect(res.status).toBe(403)
+      const body = await res.json()
+      expect(body.error).toBe("Forbidden")
+      expect(res.headers.get("Content-Type")).toBe("application/json")
     })
 
     it("calls next() when admin user", async () => {
@@ -158,6 +171,12 @@ describe("middleware", () => {
       })
       await (onRequest as Function)(ctx, next)
       expect(next).toHaveBeenCalled()
+    })
+
+    it("does not trigger for GET /api/registry/*", async () => {
+      const { ctx } = makeCtx("/api/registry/myrepo/manifests/sha256:abc", { method: "GET" })
+      const res = await (onRequest as Function)(ctx, next)
+      expect(res.status).toBe(401) // hits unauthenticated API request block
     })
   })
 
@@ -171,6 +190,7 @@ describe("middleware", () => {
       expect(res.status).toBe(403)
       const body = await res.json()
       expect(body.error).toBe("Forbidden")
+      expect(res.headers.get("Content-Type")).toBe("application/json")
     })
 
     it("redirects non-admin to /dashboard for /admin page", async () => {
@@ -199,6 +219,15 @@ describe("middleware", () => {
       await (onRequest as Function)(ctx, next)
       expect(next).toHaveBeenCalled()
     })
+
+    it("does not treat prefix matches without slash as admin", async () => {
+      const { ctx } = makeCtx("/admin-fake", {
+        sessionToken: "tok",
+        user: { roles: ["viewer"] },
+      })
+      await (onRequest as Function)(ctx, next)
+      expect(next).toHaveBeenCalled()
+    })
   })
 
   describe("auth-required non-admin routes", () => {
@@ -218,6 +247,12 @@ describe("middleware", () => {
       })
       await (onRequest as Function)(ctx, next)
       expect(next).toHaveBeenCalled()
+    })
+
+    it("does not treat prefix matches without slash as auth-required", async () => {
+      const { ctx } = makeCtx("/settings-fake")
+      await (onRequest as Function)(ctx, next)
+      expect(ctx.redirect).toHaveBeenCalledWith("/login")
     })
   })
 })

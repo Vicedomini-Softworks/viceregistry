@@ -6,8 +6,10 @@ import { verifyAuthenticationResponse } from "@simplewebauthn/server"
 import { createSessionToken, setSessionCookie } from "@/lib/auth"
 import { writeAuditLog } from "@/lib/audit"
 
-const rpID = process.env.HOST === "0.0.0.0" ? "localhost" : (process.env.HOST || "localhost")
-const origin = process.env.NODE_ENV === "production" ? `https://${rpID}` : `http://${rpID}:4321`
+const appUrl = process.env.PUBLIC_URL || (process.env.NODE_ENV === "production" ? "https://localhost" : "http://localhost:4321")
+const url = new URL(appUrl)
+const rpID = url.hostname
+const origin = url.origin
 
 export const POST: APIRoute = async ({ request, cookies }) => {
   let body: any

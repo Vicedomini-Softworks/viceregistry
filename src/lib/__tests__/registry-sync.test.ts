@@ -93,6 +93,16 @@ describe("syncRepository", () => {
     expect(mockSelect).toHaveBeenCalledWith(expect.objectContaining({ lastSyncedAt: expect.anything() }))
   })
 
+  it("syncs when lastSyncedAt is exactly at stale threshold", async () => {
+    const now = Date.now()
+    vi.spyOn(Date, "now").mockReturnValue(now)
+    mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(now - 5 * 60 * 1000) }])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    expect(mockListTags).toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+
   it("syncs when lastSyncedAt is null (missing entry)", async () => {
     mockLimit.mockResolvedValue([{ lastSyncedAt: null }])
     mockListTags.mockResolvedValue([])
@@ -180,6 +190,15 @@ describe("syncRepository", () => {
         })
       })
     )
+    
+    // Verify the exact sql strings used in onConflictDoUpdate
+    const updateCall = mockOnConflictDoUpdate.mock.calls[0][0]
+    expect(JSON.stringify(updateCall.set)).toContain("excluded.digest")
+    expect(JSON.stringify(updateCall.set)).toContain("excluded.total_size")
+    expect(JSON.stringify(updateCall.set)).toContain("excluded.os")
+    expect(JSON.stringify(updateCall.set)).toContain("excluded.architecture")
+    expect(JSON.stringify(updateCall.set)).toContain("excluded.created_at")
+    expect(JSON.stringify(updateCall.set)).toContain("excluded.last_synced_at")
   })
 
   it("uses fsLayers when layers absent", async () => {
@@ -210,6 +229,24 @@ describe("syncRepository", () => {
     mockLimit.mockResolvedValue([])
     mockListTags.mockResolvedValue(["err-tag"])
     mockGetManifest.mockRejectedValue(new Error("network error"))
+    await syncRepository("myrepo")
+    expect(mockInsert).toHaveBeenCalledTimes(1) // only repository upsert
+  })
+
+  it("skips rejected promise results from allSettled (empty status)", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["err-tag"])
+    // simulate a promise that settles with empty status
+    const allSettledSpy = vi.spyOn(Promise, "allSettled").mockResolvedValueOnce([{ status: "" as any, reason: "err" }])
+    await syncRepository("myrepo")
+    expect(mockInsert).toHaveBeenCalledTimes(1) // only repository upsert
+    allSettledSpy.mockRestore()
+  })
+
+  it("skips null promise results from allSettled", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["null-tag"])
+    mockGetManifest.mockResolvedValue({ ok: false })
     await syncRepository("myrepo")
     expect(mockInsert).toHaveBeenCalledTimes(1) // only repository upsert
   })

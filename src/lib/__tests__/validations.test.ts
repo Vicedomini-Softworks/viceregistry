@@ -40,6 +40,7 @@ describe("createUserSchema", () => {
 
   it("rejects username with invalid chars", () => {
     expect(createUserSchema.safeParse({ ...valid, username: "alice!" }).success).toBe(false)
+    expect(createUserSchema.safeParse({ ...valid, username: "ALICE" }).success).toBe(false)
   })
 
   it("rejects username too short", () => {

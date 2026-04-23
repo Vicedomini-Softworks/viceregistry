@@ -4,7 +4,9 @@ import { users } from "@/lib/schema"
 import { eq } from "drizzle-orm"
 import { generateAuthenticationOptions } from "@simplewebauthn/server"
 
-const rpID = process.env.HOST === "0.0.0.0" ? "localhost" : (process.env.HOST || "localhost")
+const appUrl = process.env.PUBLIC_URL || (process.env.NODE_ENV === "production" ? "https://localhost" : "http://localhost:4321")
+const url = new URL(appUrl)
+const rpID = url.hostname
 
 export const POST: APIRoute = async ({ request }) => {
   let body: any

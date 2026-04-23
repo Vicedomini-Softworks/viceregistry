@@ -7,7 +7,7 @@ const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
 function isStale(date: Date | null | undefined): boolean {
   if (!date) return true
-  return Date.now() - date.getTime() > STALE_THRESHOLD_MS
+  return Date.now() - date.getTime() >= STALE_THRESHOLD_MS
 }
 
 /** Sync repository list from registry → PG. Fast: one registry API call. */

@@ -5,7 +5,9 @@ import { eq } from "drizzle-orm"
 import { generateRegistrationOptions } from "@simplewebauthn/server"
 
 const rpName = "ViceRegistry"
-const rpID = process.env.HOST === "0.0.0.0" ? "localhost" : (process.env.HOST || "localhost")
+const appUrl = process.env.PUBLIC_URL || (process.env.NODE_ENV === "production" ? "https://localhost" : "http://localhost:4321")
+const url = new URL(appUrl)
+const rpID = url.hostname
 
 export const GET: APIRoute = async ({ locals }) => {
   const userId = locals.user?.sub
