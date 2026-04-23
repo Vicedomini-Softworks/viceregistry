@@ -22,6 +22,7 @@
     "badges": "tsx scripts/generate-badges.ts"
   },
   "dependencies": {
+    "@astrojs/check": "^0.9.8",
     "@astrojs/node": "^9.5.5",
     "@astrojs/react": "^4.4.2",
     "@base-ui/react": "^1.4.1",

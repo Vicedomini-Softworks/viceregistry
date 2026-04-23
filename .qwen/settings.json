@@ -25,8 +25,11 @@
       "Bash(} *)",
       "Bash(console.error)",
       "Bash(run)",
+      "Bash(npm *)",
       "Bash(eof)",
-      "Bash(docker compose restart *)"
+      "Bash(docker compose restart *)",
+      "Bash(docker compose exec *)",
+      "Bash(sed *)"
     ]
   },
   "$version": 3

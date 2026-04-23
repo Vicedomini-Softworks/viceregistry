@@ -8,7 +8,8 @@ import { db } from "@/lib/db"
 import { webauthnCredentials } from "@/lib/schema"
 import { eq } from "drizzle-orm"
 
-const { user } = Astro.locals
+const user = Astro.locals.user
+if (!user) return Astro.redirect("/login")
 
 const passkeys = await db
   .select({
@@ -31,7 +32,7 @@ const passkeys = await db
         <CardTitle>Account</CardTitle>
         <CardDescription>Your account information</CardDescription>
       </CardHeader>
-      <CardContent class="flex flex-col gap-3">
+      <CardContent className="flex flex-col gap-3">
         <div class="flex flex-col gap-0.5">
           <span class="text-xs text-muted-foreground">Username</span>
           <span class="font-medium">{user.username}</span>
@@ -48,7 +49,7 @@ const passkeys = await db
         <CardTitle>Security</CardTitle>
         <CardDescription>Manage your passkeys</CardDescription>
       </CardHeader>
-      <CardContent class="flex flex-col gap-4">
+      <CardContent className="flex flex-col gap-4">
         {passkeys.length > 0 && (
           <div class="flex flex-col gap-2">
             {passkeys.map((pk) => (
@@ -59,15 +60,15 @@ const passkeys = await db
                     Added: {new Date(pk.createdAt).toLocaleDateString()}
                   </span>
                 </div>
-                <Button variant="ghost" size="icon" class="text-destructive">
-                  <Trash2 class="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="text-destructive">
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             ))}
           </div>
         )}
         <Button id="register-passkey-btn" variant="outline">
-          <Fingerprint class="mr-2 h-4 w-4" />
+          <Fingerprint className="mr-2 h-4 w-4" />
           Register New Passkey
         </Button>
       </CardContent>
@@ -118,7 +119,7 @@ const passkeys = await db
         <CardTitle>Access Tokens</CardTitle>
         <CardDescription>Generate tokens for Docker CLI</CardDescription>
       </CardHeader>
-      <CardContent class="flex flex-col gap-4">
+      <CardContent className="flex flex-col gap-4">
         <form id="token-form" class="flex gap-2">
           <input
             id="token-name"
@@ -143,7 +144,7 @@ const passkeys = await db
         <CardTitle>Docker CLI</CardTitle>
         <CardDescription>Connect to this registry with Docker</CardDescription>
       </CardHeader>
-      <CardContent class="flex flex-col gap-2">
+      <CardContent className="flex flex-col gap-2">
         <p class="text-sm text-muted-foreground">Run this command to authenticate your Docker client:</p>
         <code class="rounded-md bg-muted px-3 py-2 font-mono text-sm block">
           docker login {process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"}

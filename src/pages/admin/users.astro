@@ -38,7 +38,9 @@ const rolesByUser = roleAssignments.reduce(
 )
 
 const usersWithRoles = allUsers.map((u) => ({ ...u, roles: rolesByUser[u.id] ?? [], createdAt: u.createdAt.toISOString() }))
-const currentUserId = Astro.locals.user.sub
+const user = Astro.locals.user
+if (!user) return Astro.redirect("/login")
+const currentUserId = user.sub
 ---
 
 <AppLayout title="Users">

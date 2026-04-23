@@ -120,7 +120,7 @@ describe("syncRepository", () => {
     await syncRepository("myrepo")
     // Should call insert for repository upsert at the end
     expect(mockInsert).toHaveBeenCalled()
-    const lastCall = mockValues.mock.calls[mockValues.mock.calls.length - 1][0]
+    const lastCall = (mockValues as any).mock.calls[(mockValues as any).mock.calls.length - 1][0] as any
     expect(lastCall).toMatchObject({ name: "myrepo", tagCount: 0, sizeBytes: 0 })
     
     expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(
@@ -155,7 +155,7 @@ describe("syncRepository", () => {
     })
     await syncRepository("myrepo")
     expect(mockInsert).toHaveBeenCalledTimes(2) // imageMetadata + repository
-    const metaCall = mockValues.mock.calls[0][0]
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
     expect(metaCall[0]).toMatchObject({
       repository: "myrepo",
       tag: "latest",
@@ -163,7 +163,7 @@ describe("syncRepository", () => {
       os: "linux",
       architecture: "amd64",
     })
-    const repoCall = mockValues.mock.calls[1][0]
+    const repoCall = (mockValues as any).mock.calls[1][0] as any
     expect(repoCall).toMatchObject({ name: "myrepo", tagCount: 1, sizeBytes: 300 })
     
     // Verify onConflictDoUpdate for imageMetadata
@@ -202,7 +202,7 @@ describe("syncRepository", () => {
       }),
     })
     await syncRepository("myrepo")
-    const metaCall = mockValues.mock.calls[0][0]
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
     expect(metaCall[0]).toMatchObject({ totalSize: 125 })
   })
 
@@ -262,7 +262,7 @@ describe("syncRepository", () => {
       }),
     })
     await syncRepository("myrepo")
-    const metaCall = mockValues.mock.calls[0][0]
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
     expect(metaCall[0]).toMatchObject({ os: null, architecture: null, createdAt: null })
   })
 
@@ -276,7 +276,7 @@ describe("syncRepository", () => {
       }),
     })
     await syncRepository("myrepo")
-    const metaCall = mockValues.mock.calls[0][0]
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
     expect(metaCall[0]).toMatchObject({ os: null, architecture: null, createdAt: null, digest: undefined })
   })
 
@@ -291,7 +291,7 @@ describe("syncRepository", () => {
       }),
     })
     await syncRepository("myrepo")
-    const metaCall = mockValues.mock.calls[0][0]
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
     expect(metaCall[0]).toMatchObject({ totalSize: 0 })
   })
 
@@ -306,7 +306,7 @@ describe("syncRepository", () => {
       }),
     })
     await syncRepository("myrepo")
-    const metaCall = mockValues.mock.calls[0][0]
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
     expect(metaCall[0]).toMatchObject({ totalSize: 0 })
   })
 

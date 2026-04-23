@@ -23,7 +23,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
   if (!username || !response) return Response.json({ error: "Missing username or response" }, { status: 400 })
 
   const [user] = await db
-    .select({ id: users.id, username: users.username, webauthnCurrentChallenge: users.webauthnCurrentChallenge })
+    .select({ id: users.id, username: users.username, email: users.email, webauthnCurrentChallenge: users.webauthnCurrentChallenge })
     .from(users)
     .where(eq(users.username, username))
     .limit(1)
@@ -77,6 +77,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const token = await createSessionToken({
       sub: user.id,
       username: user.username,
+      email: user.email,
       roles: userRolesRows.map((r) => r.name),
     })
 

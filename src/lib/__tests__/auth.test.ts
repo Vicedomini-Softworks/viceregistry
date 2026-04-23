@@ -15,6 +15,7 @@ describe("auth", () => {
     it("returns a JWT string", async () => {
       const token = await createSessionToken({
         sub: "user-1",
+        email: "user@example.com",
         username: "alice",
         roles: ["viewer"],
       })
@@ -25,7 +26,8 @@ describe("auth", () => {
 
   describe("verifySessionToken", () => {
     it("round-trips a valid token", async () => {
-      const payload = { sub: "user-1", username: "alice", roles: ["admin"] }
+      const payload = { sub: "user-1",
+        email: "user@example.com", username: "alice", roles: ["admin"] }
       const token = await createSessionToken(payload)
       const result = await verifySessionToken(token)
       expect(result.sub).toBe("user-1")
@@ -37,7 +39,7 @@ describe("auth", () => {
     })
 
     it("throws on token signed with wrong secret", async () => {
-      const token = await createSessionToken({ sub: "u", username: "u", roles: [] })
+      const token = await createSessionToken({ sub: "u", username: "u", email: "u@u.com", roles: [] })
       vi.stubEnv("SESSION_SECRET", "completely-different-secret-here!!")
       await expect(verifySessionToken(token)).rejects.toThrow()
     })
@@ -46,7 +48,7 @@ describe("auth", () => {
   describe("getSecret — missing env var", () => {
     it("throws when SESSION_SECRET is absent", async () => {
       vi.stubEnv("SESSION_SECRET", "")
-      await expect(createSessionToken({ sub: "u", username: "u", roles: [] })).rejects.toThrow(
+      await expect(createSessionToken({ sub: "u", username: "u", email: "u@u.com", roles: [] })).rejects.toThrow(
         "SESSION_SECRET env var is required",
       )
     })

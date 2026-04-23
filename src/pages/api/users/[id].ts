@@ -67,7 +67,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     }
   }
 
-  writeAuditLog({ userId: locals.user.sub, action: "update_user", resource: id, ipAddress: null })
+  writeAuditLog({ userId: locals.user!.sub, action: "update_user", resource: id, ipAddress: null })
 
   return Response.json({ ok: true })
 }
@@ -76,13 +76,13 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
   const { id } = params
   if (!id) return Response.json({ error: "Missing id" }, { status: 400 })
 
-  if (id === locals.user.sub) {
+  if (id === locals.user!.sub) {
     return Response.json({ error: "Cannot delete your own account" }, { status: 400 })
   }
 
   await db.delete(users).where(eq(users.id, id))
 
-  writeAuditLog({ userId: locals.user.sub, action: "delete_user", resource: id, ipAddress: null })
+  writeAuditLog({ userId: locals.user!.sub, action: "delete_user", resource: id, ipAddress: null })
 
   return Response.json({ ok: true })
 }

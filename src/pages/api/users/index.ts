@@ -77,7 +77,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   writeAuditLog({
-    userId: locals.user.sub,
+    userId: locals.user!.sub,
     action: "create_user",
     resource: newUser.id,
     ipAddress: null,
