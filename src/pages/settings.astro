@@ -3,9 +3,23 @@ export const prerender = false
 import AppLayout from "@/layouts/app.astro"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Fingerprint } from "lucide-react"
+import { Fingerprint, Trash2 } from "lucide-react"
+import { db } from "@/lib/db"
+import { webauthnCredentials } from "@/lib/schema"
+import { eq } from "drizzle-orm"
 
 const { user } = Astro.locals
+
+const passkeys = await db
+  .select({
+    id: webauthnCredentials.id,
+    deviceType: webauthnCredentials.deviceType,
+    createdAt: webauthnCredentials.createdAt,
+    lastUsedAt: webauthnCredentials.lastUsedAt,
+  })
+  .from(webauthnCredentials)
+  .where(eq(webauthnCredentials.userId, user.sub))
+  .orderBy(webauthnCredentials.createdAt)
 ---
 
 <AppLayout title="Settings">
@@ -34,7 +48,24 @@ const { user } = Astro.locals
         <CardTitle>Security</CardTitle>
         <CardDescription>Manage your passkeys</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent class="flex flex-col gap-4">
+        {passkeys.length > 0 && (
+          <div class="flex flex-col gap-2">
+            {passkeys.map((pk) => (
+              <div class="flex items-center justify-between p-3 border rounded-md">
+                <div class="flex flex-col">
+                  <span class="text-sm font-medium">Passkey ({pk.deviceType})</span>
+                  <span class="text-xs text-muted-foreground">
+                    Added: {new Date(pk.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <Button variant="ghost" size="icon" class="text-destructive">
+                  <Trash2 class="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
         <Button id="register-passkey-btn" variant="outline">
           <Fingerprint class="mr-2 h-4 w-4" />
           Register New Passkey
@@ -148,6 +179,7 @@ const { user } = Astro.locals
         if (!verifyRes.ok) throw new Error((await verifyRes.json()).error || "Verification failed")
         
         toast.success("Passkey registered successfully")
+        setTimeout(() => window.location.reload(), 1000)
       } catch (err: any) {
         toast.error(err.message || "Failed to register passkey")
       } finally {
