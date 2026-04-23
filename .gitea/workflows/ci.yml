@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Run unit tests & coverage
+        run: npm run test:coverage
+        
+      - name: Run mutation tests
+        run: npm run test:mutation
+        
+      - name: Generate badges
+        run: npm run badges
+        
+      - name: Commit badges
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add public/badges/
+          git commit -m "chore: update badges [skip ci]" || echo "No changes to commit"
+          git push

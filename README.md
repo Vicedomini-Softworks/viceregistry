@@ -1,5 +1,7 @@
 # ViceRegistry
 
+![Coverage](./public/badges/coverage.svg) ![Mutation](./public/badges/mutation.svg)
+
 ![ViceRegistry](public/logo-wide.png)
 
 A production-ready Docker Registry UI with authentication, user management, and role-based access control. Built on Astro SSR + React + TypeScript + Tailwind CSS.

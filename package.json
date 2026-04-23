@@ -18,7 +18,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "test:mutation": "stryker run"
+    "test:mutation": "stryker run",
+    "badges": "tsx scripts/generate-badges.ts"
   },
   "dependencies": {
     "@astrojs/node": "^9.5.5",
