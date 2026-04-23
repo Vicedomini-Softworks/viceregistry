@@ -24,10 +24,21 @@ async function main() {
     .returning()
 
   const [adminRole] = await db
-    .select()
-    .from(schema.roles)
-    .where(eq(schema.roles.name, "admin"))
-    .limit(1)
+    .insert(schema.roles)
+    .values({ name: "admin", description: "Administrator" })
+    .onConflictDoUpdate({
+      target: schema.roles.name,
+      set: { description: "Administrator" },
+    })
+    .returning()
+
+  await db
+    .insert(schema.roles)
+    .values([
+      { name: "push", description: "Can push images" },
+      { name: "pull", description: "Can pull images" },
+    ])
+    .onConflictDoNothing()
 
   if (!adminRole) {
     console.error("Admin role not found. Run migrations and seed roles SQL first.")

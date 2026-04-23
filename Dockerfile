@@ -23,9 +23,15 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY --from=builder --chown=astro:nodejs /app/dist ./dist
 COPY --from=builder --chown=astro:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=astro:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=astro:nodejs /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=builder --chown=astro:nodejs /app/src/lib/schema.ts ./src/lib/schema.ts
 
 # Drizzle migrations (run via db:migrate in entrypoint or init container)
 COPY --from=builder --chown=astro:nodejs /app/drizzle ./drizzle
+COPY --from=builder --chown=astro:nodejs /app/scripts ./scripts
+
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 USER astro
 EXPOSE 4321
@@ -36,4 +42,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 ENV HOST=0.0.0.0
 ENV PORT=4321
 
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["node", "dist/server/entry.mjs"]
