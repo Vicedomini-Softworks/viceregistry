@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Package, AlertCircle } from "lucide-react"
+import { AlertCircle } from "lucide-react"
 
 export default function LoginForm() {
   const [username, setUsername] = useState("")
@@ -43,7 +43,7 @@ export default function LoginForm() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-2">
-            <Package className="h-8 w-8 text-primary" />
+            <img src="/logo-favicon.png" alt="ViceRegistry Logo" className="h-12 w-auto" />
           </div>
           <CardTitle className="text-2xl">ViceRegistry</CardTitle>
           <CardDescription>Sign in to manage your Docker registry</CardDescription>

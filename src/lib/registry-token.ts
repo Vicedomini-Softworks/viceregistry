@@ -24,7 +24,6 @@ export async function issueRegistryToken(claims: TokenClaims): Promise<string> {
 }
 
 function parseScopeToAccess(scope: string) {
-  if (!scope) return []
   const parts = scope.split(":")
   if (parts.length < 3) return []
   const [type, name, actionsStr] = parts
