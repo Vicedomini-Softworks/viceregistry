@@ -51,7 +51,7 @@ describe("registry-client", () => {
       vi.stubGlobal("fetch", fetchMock)
       await listRepositories()
       const [url] = fetchMock.mock.calls[0]
-      expect(url).toBe("http://localhost:5000/v2/_catalog?n=1000")
+      expect(url).toBe("http://registry:5000/v2/_catalog?n=1000")
     })
   })
 
@@ -79,7 +79,7 @@ describe("registry-client", () => {
       vi.stubGlobal("fetch", fetchMock)
       await listTags("myrepo")
       const [url] = fetchMock.mock.calls[0]
-      expect(url).toBe("http://localhost:5000/v2/myrepo/tags/list")
+      expect(url).toBe("http://registry:5000/v2/myrepo/tags/list")
     })
   })
 
@@ -96,7 +96,7 @@ describe("registry-client", () => {
       vi.stubGlobal("fetch", fetchMock)
       await getManifest("myrepo", "latest")
       const [url] = fetchMock.mock.calls[0]
-      expect(url).toBe("http://localhost:5000/v2/myrepo/manifests/latest")
+      expect(url).toBe("http://registry:5000/v2/myrepo/manifests/latest")
     })
   })
 
@@ -121,7 +121,7 @@ describe("registry-client", () => {
       vi.stubGlobal("fetch", fetchMock)
       await getManifestDigest("myrepo", "latest")
       const [url, opts] = fetchMock.mock.calls[0]
-      expect(url).toBe("http://localhost:5000/v2/myrepo/manifests/latest")
+      expect(url).toBe("http://registry:5000/v2/myrepo/manifests/latest")
       expect(opts.method).toBe("HEAD")
     })
   })
@@ -132,7 +132,7 @@ describe("registry-client", () => {
       vi.stubGlobal("fetch", fetchMock)
       await deleteManifest("myrepo", "sha256:deadbeef")
       const [url, opts] = fetchMock.mock.calls[0]
-      expect(url).toBe("http://localhost:5000/v2/myrepo/manifests/sha256:deadbeef")
+      expect(url).toBe("http://registry:5000/v2/myrepo/manifests/sha256:deadbeef")
       expect(opts.method).toBe("DELETE")
     })
   })
@@ -143,7 +143,7 @@ describe("registry-client", () => {
       vi.stubGlobal("fetch", fetchMock)
       await proxyRegistryRequest("/some/path", { method: "GET", headers: { "X-Custom": "1" } })
       const [url, opts] = fetchMock.mock.calls[0]
-      expect(url).toBe("http://localhost:5000/v2/some/path")
+      expect(url).toBe("http://registry:5000/v2/some/path")
       expect(opts.headers).toEqual({
         Accept:
           "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json",
