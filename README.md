@@ -1,5 +1,7 @@
 # ViceRegistry
 
+![ViceRegistry](public/logo-wide.png)
+
 A production-ready Docker Registry UI with authentication, user management, and role-based access control. Built on Astro SSR + React + TypeScript + Tailwind CSS.
 
 The app acts as a Docker Registry token auth server — the registry delegates all authentication to ViceRegistry, so a single set of credentials works for both the web UI and `docker login`.

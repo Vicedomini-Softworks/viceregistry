@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Users, Package } from "lucide-react"
+import { LayoutDashboard, Users } from "lucide-react"
 
 interface Props {
   roles: string[]
@@ -16,9 +16,8 @@ export default function Sidebar({ roles, currentPath }: Props) {
 
   return (
     <aside className="flex w-60 flex-col border-r bg-card">
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        <Package className="h-5 w-5 text-primary" />
-        <span className="font-semibold">ViceRegistry</span>
+      <div className="flex h-14 items-center border-b px-4">
+        <img src="/logo-favicon.png" alt="ViceRegistry" className="h-8 w-auto" />
       </div>
       <nav className="flex flex-col gap-1 p-3">
         {navItems.map((item) => {
