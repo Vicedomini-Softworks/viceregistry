@@ -1,7 +1,7 @@
 import { SignJWT, importPKCS8 } from "jose"
 import { db } from "@/lib/db"
-import { organizationRepositories, organizationMembers, userRepositoryPermissions } from "@/lib/schema"
-import { eq, and, or } from "drizzle-orm"
+import { organizations, organizationRepositories, organizationMembers, userRepositoryPermissions, users } from "@/lib/schema"
+import { eq, and } from "drizzle-orm"
 
 export interface TokenClaims {
   subject: string
@@ -39,6 +39,12 @@ function parseScopeToAccess(scope: string) {
   return [{ type, name, actions }]
 }
 
+function parseNamespace(name: string): string | null {
+  const slashIdx = name.indexOf("/")
+  if (slashIdx === -1) return null
+  return name.slice(0, slashIdx)
+}
+
 export async function computeGrantedScope(
   requestedScope: string,
   roleNames: string[],
@@ -54,9 +60,8 @@ export async function computeGrantedScope(
   // 1. Check Token Constraints first
   if (constraints) {
     if (constraints.repositoryName && constraints.repositoryName !== name) {
-      return "" // Token is scoped to a different repository
+      return ""
     }
-    // Organization constraint will be checked during permission resolution
   }
 
   let isAdmin = roleNames.includes("admin")
@@ -64,50 +69,99 @@ export async function computeGrantedScope(
   let canPull = canPush || roleNames.includes("viewer")
 
   if (userId && type === "repository") {
-    // 2. Check Organization-level access
-    const orgAccess = await db
-      .select({ role: organizationMembers.role, orgId: organizationMembers.organizationId })
-      .from(organizationRepositories)
-      .innerJoin(organizationMembers, eq(organizationRepositories.organizationId, organizationMembers.organizationId))
-      .where(and(eq(organizationRepositories.repositoryName, name), eq(organizationMembers.userId, userId)))
-      .limit(1)
+    if (isAdmin) {
+      // Global admin bypasses all namespace checks
+    } else {
+      const namespace = parseNamespace(name)
 
-    if (orgAccess.length > 0) {
-      const { role: oRole, orgId } = orgAccess[0]
-      
-      // If token is constrained to an org, ensure it matches
-      if (!constraints?.organizationId || constraints.organizationId === orgId) {
-        if (oRole === "owner" || oRole === "admin") {
-          isAdmin = true
-          canPush = true
-          canPull = true
-        } else if (oRole === "developer" || oRole === "push") {
-          canPush = true
-          canPull = true
-        } else if (oRole === "member" || oRole === "viewer" || oRole === "pull") {
-          canPull = true
+      if (namespace !== null) {
+        // Namespaced repository — resolve via username or org slug
+        const [userRow] = await db
+          .select({ username: users.username })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1)
+
+        if (!userRow) return ""
+
+        if (userRow.username !== namespace) {
+          // Not the user's own namespace — check org membership by slug
+          const orgAccess = await db
+            .select({ role: organizationMembers.role, orgId: organizationMembers.organizationId })
+            .from(organizations)
+            .innerJoin(organizationMembers, eq(organizations.id, organizationMembers.organizationId))
+            .where(and(eq(organizations.slug, namespace), eq(organizationMembers.userId, userId)))
+            .limit(1)
+
+          if (orgAccess.length === 0) return ""
+
+          const { role: oRole, orgId } = orgAccess[0]
+
+          if (constraints?.organizationId && constraints.organizationId !== orgId) return ""
+
+          // Org role is authoritative — overwrite all global role flags
+          if (oRole === "owner" || oRole === "admin") {
+            isAdmin = true
+            canPush = true
+            canPull = true
+          } else if (oRole === "developer" || oRole === "push") {
+            isAdmin = false
+            canPush = true
+            canPull = true
+          } else if (oRole === "member" || oRole === "viewer" || oRole === "pull") {
+            isAdmin = false
+            canPush = false
+            canPull = true
+          } else {
+            return ""
+          }
         }
-      }
-    }
+        // else: user's own namespace — global role flags already correct
+      } else {
+        // Flat name — existing org repo + direct permission checks (backward compat)
+        const orgAccess = await db
+          .select({ role: organizationMembers.role, orgId: organizationMembers.organizationId })
+          .from(organizationRepositories)
+          .innerJoin(organizationMembers, eq(organizationRepositories.organizationId, organizationMembers.organizationId))
+          .where(and(eq(organizationRepositories.repositoryName, name), eq(organizationMembers.userId, userId)))
+          .limit(1)
 
-    // 3. Check Direct Repository-level access (User-specific)
-    const directAccess = await db
-      .select({ permission: userRepositoryPermissions.permission })
-      .from(userRepositoryPermissions)
-      .where(and(eq(userRepositoryPermissions.repositoryName, name), eq(userRepositoryPermissions.userId, userId)))
-      .limit(1)
+        if (orgAccess.length > 0) {
+          const { role: oRole, orgId } = orgAccess[0]
 
-    if (directAccess.length > 0) {
-      const { permission } = directAccess[0]
-      if (permission === "admin") {
-        isAdmin = true
-        canPush = true
-        canPull = true
-      } else if (permission === "push") {
-        canPush = true
-        canPull = true
-      } else if (permission === "pull") {
-        canPull = true
+          if (!constraints?.organizationId || constraints.organizationId === orgId) {
+            if (oRole === "owner" || oRole === "admin") {
+              isAdmin = true
+              canPush = true
+              canPull = true
+            } else if (oRole === "developer" || oRole === "push") {
+              canPush = true
+              canPull = true
+            } else if (oRole === "member" || oRole === "viewer" || oRole === "pull") {
+              canPull = true
+            }
+          }
+        }
+
+        const directAccess = await db
+          .select({ permission: userRepositoryPermissions.permission })
+          .from(userRepositoryPermissions)
+          .where(and(eq(userRepositoryPermissions.repositoryName, name), eq(userRepositoryPermissions.userId, userId)))
+          .limit(1)
+
+        if (directAccess.length > 0) {
+          const { permission } = directAccess[0]
+          if (permission === "admin") {
+            isAdmin = true
+            canPush = true
+            canPull = true
+          } else if (permission === "push") {
+            canPush = true
+            canPull = true
+          } else if (permission === "pull") {
+            canPull = true
+          }
+        }
       }
     }
   }

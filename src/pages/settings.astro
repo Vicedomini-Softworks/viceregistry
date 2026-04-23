@@ -37,7 +37,7 @@ const tokens = await db
   .orderBy(desc(accessTokens.createdAt))
 
 const userOrgs = await db
-  .select({ id: organizations.id, name: organizations.name })
+  .select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
   .from(organizations)
   .innerJoin(organizationMembers, eq(organizations.id, organizationMembers.organizationId))
   .where(eq(organizationMembers.userId, user.sub))
@@ -190,6 +190,10 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
           <p class="text-sm font-medium">Your new access token:</p>
           <code id="new-token-value" class="text-sm break-all font-mono bg-background p-2 rounded border"></code>
           <p class="text-xs text-muted-foreground">Copy this token now. You won't be able to see it again.</p>
+          <div id="push-hint-container" class="hidden flex-col gap-1 pt-1 border-t border-border/50">
+            <p class="text-xs font-medium">Push to your namespace:</p>
+            <code id="push-command-hint" class="text-xs break-all font-mono bg-background p-2 rounded border"></code>
+          </div>
         </div>
 
         {tokens.length > 0 && (
@@ -207,7 +211,7 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
                     </div>
                     <div class="flex gap-1">
                       {token.organizationId ? (
-                        <span class="bg-primary/10 text-primary px-1 rounded">Org: {userOrgs.find(o => o.id === token.organizationId)?.name || "Unknown"}</span>
+                        <span class="bg-primary/10 text-primary px-1 rounded">Org: {userOrgs.find(o => o.id === token.organizationId)?.slug || "Unknown"}</span>
                       ) : (
                         <span class="bg-muted px-1 rounded">Global Org</span>
                       )}
@@ -250,9 +254,16 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
     </Card>
   </div>
 
+  <script id="__vr_data" type="application/json" set:html={JSON.stringify({ userOrgs, registryHost: process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000" })} />
+
   <script>
     import { toast } from "sonner"
     import { startRegistration } from "@simplewebauthn/browser"
+
+    const __vrDataEl = document.getElementById("__vr_data")
+    const __vrData = __vrDataEl ? JSON.parse(__vrDataEl.textContent || "{}") : {}
+    const __userOrgs = (__vrData.userOrgs || []) as Array<{ id: string; name: string; slug: string }>
+    const __registryHost = (__vrData.registryHost || "localhost:5000") as string
 
     const form = document.getElementById("settings-form") as HTMLFormElement
     const btn = document.getElementById("save-btn") as HTMLButtonElement
@@ -312,6 +323,19 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
         tokenValue.textContent = data.token
         tokenContainer.classList.remove("hidden")
         tokenContainer.classList.add("flex")
+
+        const orgId = formData.get("organizationId") as string
+        const pushContainer = document.getElementById("push-hint-container") as HTMLDivElement
+        const pushCmd = document.getElementById("push-command-hint") as HTMLElement
+        if (pushContainer && pushCmd && orgId) {
+          const org = __userOrgs.find((o) => o.id === orgId)
+          if (org) {
+            pushCmd.textContent = `docker push ${__registryHost}/${org.slug}/my-image:tag`
+            pushContainer.classList.remove("hidden")
+            pushContainer.classList.add("flex")
+          }
+        }
+
         tokenForm.reset()
         toast.success("Access token generated")
         

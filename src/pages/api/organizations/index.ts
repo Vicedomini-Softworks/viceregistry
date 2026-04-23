@@ -1,17 +1,18 @@
 import type { APIRoute } from "astro"
 import { db } from "@/lib/db"
 import { organizations, organizationMembers } from "@/lib/schema"
+import { createOrganizationSchema, deriveSlug } from "@/lib/validations"
 import { eq } from "drizzle-orm"
 
 export const GET: APIRoute = async ({ locals }) => {
   const userId = locals.user?.sub
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
-  // List organizations where the user is a member
   const orgs = await db
     .select({
       id: organizations.id,
       name: organizations.name,
+      slug: organizations.slug,
       description: organizations.description,
       role: organizationMembers.role,
       createdAt: organizations.createdAt,
@@ -27,22 +28,25 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const userId = locals.user?.sub
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
-  let body: any
+  let body: unknown
   try {
     body = await request.json()
   } catch {
     return Response.json({ error: "Invalid JSON" }, { status: 400 })
   }
 
-  if (!body.name) return Response.json({ error: "Name required" }, { status: 400 })
+  const result = createOrganizationSchema.safeParse(body)
+  if (!result.success) {
+    return Response.json({ error: result.error.issues[0].message }, { status: 400 })
+  }
+
+  const { name, description } = result.data
+  const slug = result.data.slug ?? deriveSlug(name)
 
   try {
     const [newOrg] = await db
       .insert(organizations)
-      .values({
-        name: body.name,
-        description: body.description,
-      })
+      .values({ name, slug, description })
       .returning()
 
     await db.insert(organizationMembers).values({
@@ -54,7 +58,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return Response.json(newOrg)
   } catch (err: any) {
     if (err.code === "23505") {
-      return Response.json({ error: "Organization name already exists" }, { status: 400 })
+      const isSlug = err.detail?.includes("slug")
+      return Response.json(
+        { error: isSlug ? "Slug already taken" : "Organization name already exists" },
+        { status: 400 },
+      )
     }
     return Response.json({ error: "Failed to create organization" }, { status: 500 })
   }

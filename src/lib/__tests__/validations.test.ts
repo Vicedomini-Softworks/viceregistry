@@ -4,6 +4,9 @@ import {
   createUserSchema,
   updateUserSchema,
   updateSettingsSchema,
+  createOrganizationSchema,
+  deriveSlug,
+  SLUG_ERROR,
 } from "@/lib/validations"
 
 describe("loginSchema", () => {
@@ -114,6 +117,101 @@ describe("updateUserSchema", () => {
 
   it("rejects password under 8 chars", () => {
     expect(updateUserSchema.safeParse({ password: "short" }).success).toBe(false)
+  })
+})
+
+describe("createOrganizationSchema", () => {
+  const valid = { name: "Acme Corp", slug: "acme-corp", description: "Our org" }
+
+  it("accepts valid organization", () => {
+    expect(createOrganizationSchema.safeParse(valid).success).toBe(true)
+  })
+
+  it("accepts organization without description", () => {
+    expect(createOrganizationSchema.safeParse({ name: "Acme", slug: "acme" }).success).toBe(true)
+  })
+
+  it("accepts organization without slug (auto-derive from name)", () => {
+    expect(createOrganizationSchema.safeParse({ name: "Acme" }).success).toBe(true)
+  })
+
+  it("rejects missing name", () => {
+    expect(createOrganizationSchema.safeParse({ slug: "acme" }).success).toBe(false)
+  })
+
+  it("rejects slug with uppercase letters", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "Acme-Corp" }).success).toBe(false)
+  })
+
+  it("rejects slug starting with hyphen", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "-acme" }).success).toBe(false)
+  })
+
+  it("rejects slug ending with hyphen", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "acme-" }).success).toBe(false)
+  })
+
+  it("rejects slug shorter than 3 chars", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "ab" }).success).toBe(false)
+  })
+
+  it("rejects slug longer than 39 chars", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "a".repeat(40) }).success).toBe(false)
+  })
+
+  it("rejects slug with spaces", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "acme corp" }).success).toBe(false)
+  })
+
+  it("rejects slug with special characters", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "acme_corp" }).success).toBe(false)
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "acme.corp" }).success).toBe(false)
+  })
+
+  it("accepts slug with hyphens in the middle", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "my-cool-org" }).success).toBe(true)
+  })
+
+  it("accepts minimum length slug of 3 chars", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "abc" }).success).toBe(true)
+  })
+
+  it("accepts maximum length slug of 39 chars", () => {
+    expect(createOrganizationSchema.safeParse({ ...valid, slug: "a" + "b".repeat(37) + "c" }).success).toBe(true)
+  })
+
+  it("returns the SLUG_ERROR message for invalid slug", () => {
+    const result = createOrganizationSchema.safeParse({ ...valid, slug: "-bad" })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe(SLUG_ERROR)
+    }
+  })
+})
+
+describe("deriveSlug", () => {
+  it("lowercases and replaces spaces with hyphens", () => {
+    expect(deriveSlug("Acme Corp")).toBe("acme-corp")
+  })
+
+  it("strips leading and trailing hyphens", () => {
+    expect(deriveSlug("---my org---")).toBe("my-org")
+  })
+
+  it("collapses multiple non-alphanumeric chars into single hyphen", () => {
+    expect(deriveSlug("my  --  org")).toBe("my-org")
+  })
+
+  it("truncates to 39 chars", () => {
+    expect(deriveSlug("a".repeat(50))).toHaveLength(39)
+  })
+
+  it("handles all-special-chars name gracefully", () => {
+    expect(deriveSlug("---")).toBe("")
+  })
+
+  it("handles mixed alphanumeric and special chars", () => {
+    expect(deriveSlug("Hello, World! 2024")).toBe("hello-world-2024")
   })
 })
 

@@ -317,4 +317,109 @@ describe("computeGrantedScope", () => {
       expect(await computeGrantedScope("repository:r:pull,push", [], "u1")).toBe("")
     })
   })
+
+  describe("Namespaced Repositories", () => {
+    it("global admin bypasses namespace check without DB calls", async () => {
+      mockSelect.mockClear()
+      const result = await computeGrantedScope("repository:other-user/image:pull,push,delete,*", ["admin"], "u1")
+      expect(result).toBe("repository:other-user/image:pull,push,delete,*")
+      expect(mockSelect).not.toHaveBeenCalled()
+    })
+
+    it("grants push+pull to user in their own namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }]) // users lookup
+      expect(await computeGrantedScope("repository:sofia/myapp:pull,push", ["push"], "u1")).toBe("repository:sofia/myapp:pull,push")
+    })
+
+    it("grants pull only to viewer in their own namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      expect(await computeGrantedScope("repository:sofia/myapp:pull,push", ["viewer"], "u1")).toBe("repository:sofia/myapp:pull")
+    })
+
+    it("denies delete for push role in own namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      expect(await computeGrantedScope("repository:sofia/myapp:pull,push,delete", ["push"], "u1")).toBe("repository:sofia/myapp:pull,push")
+    })
+
+    it("grants full access to org owner in org namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "owner", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push,delete,*", [], "u1")).toBe("repository:myorg/image:pull,push,delete,*")
+    })
+
+    it("grants full access to org admin in org namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "admin", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push,delete,*", [], "u1")).toBe("repository:myorg/image:pull,push,delete,*")
+    })
+
+    it("grants push+pull to org developer in org namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "developer", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push,delete", [], "u1")).toBe("repository:myorg/image:pull,push")
+    })
+
+    it("grants push+pull to org push role in org namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "push", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push,delete", [], "u1")).toBe("repository:myorg/image:pull,push")
+    })
+
+    it("grants pull only to org member in org namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "member", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push", [], "u1")).toBe("repository:myorg/image:pull")
+    })
+
+    it("grants pull only to org viewer in org namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "viewer", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push", [], "u1")).toBe("repository:myorg/image:pull")
+    })
+
+    it("grants pull only to org pull role in org namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "pull", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push", [], "u1")).toBe("repository:myorg/image:pull")
+    })
+
+    it("denies access for unknown org role", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "guest", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push", [], "u1")).toBe("")
+    })
+
+    it("denies access to foreign user namespace", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([]) // no org with that slug
+      expect(await computeGrantedScope("repository:other-user/image:pull,push", ["push"], "u1")).toBe("")
+    })
+
+    it("denies access when org slug not found", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([]) // no org match
+      expect(await computeGrantedScope("repository:unknown-org/image:pull", [], "u1")).toBe("")
+    })
+
+    it("denies when user row not found", async () => {
+      mockExecute.mockResolvedValueOnce([]) // no user found
+      expect(await computeGrantedScope("repository:myorg/image:pull", [], "u1")).toBe("")
+    })
+
+    it("enforces org token constraint mismatch on namespaced repo", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "developer", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push", [], "u1", { organizationId: "org2" })).toBe("")
+    })
+
+    it("passes org token constraint when matching namespaced repo", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "owner", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:pull,push", [], "u1", { organizationId: "org1" })).toBe("repository:myorg/image:pull,push")
+    })
+
+    it("enforces repositoryName token constraint on namespaced repo", async () => {
+      expect(await computeGrantedScope("repository:myorg/image:pull", ["admin"], "u1", { repositoryName: "myorg/other" })).toBe("")
+    })
+  })
 })

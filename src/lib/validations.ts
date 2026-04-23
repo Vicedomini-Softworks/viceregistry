@@ -27,6 +27,26 @@ export const updateUserSchema = z
     message: "At least one field must be provided",
   })
 
+export const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,37}[a-z0-9]$/
+
+export const SLUG_ERROR =
+  "Slug must be 3–39 lowercase alphanumeric characters or hyphens, cannot start or end with a hyphen"
+
+export function deriveSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-")
+    .slice(0, 39)
+}
+
+export const createOrganizationSchema = z.object({
+  name: z.string().min(1).max(100),
+  slug: z.string().min(3).max(39).regex(SLUG_REGEX, SLUG_ERROR).optional(),
+  description: z.string().max(500).optional(),
+})
+
 export const updateSettingsSchema = z
   .object({
     email: z.string().email().optional(),

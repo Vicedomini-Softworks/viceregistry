@@ -3,7 +3,7 @@ export const prerender = false
 import AppLayout from "@/layouts/app.astro"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Building2, UserPlus, Trash2, Shield, Package } from "lucide-react"
+import { Building2, UserPlus, Trash2, Shield, Package, Terminal } from "lucide-react"
 import { db } from "@/lib/db"
 import { organizations, organizationMembers, users, organizationRepositories } from "@/lib/schema"
 import { eq, and } from "drizzle-orm"
@@ -48,6 +48,7 @@ const repos = await db
 
 const isOwner = userMembership.role === "owner"
 const isAdmin = isOwner || userMembership.role === "admin"
+const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
 ---
 
 <AppLayout title={`${org.name} - Organization`}>
@@ -55,11 +56,15 @@ const isAdmin = isOwner || userMembership.role === "admin"
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="p-2 bg-primary/10 rounded-lg">
-          <Building2 class="h-6 w-6 text-primary" />
+          <Building2 className="h-6 w-6 text-primary" />
         </div>
         <div class="flex flex-col">
           <h1 class="text-2xl font-semibold">{org.name}</h1>
           <p class="text-sm text-muted-foreground">{org.description || "No description"}</p>
+          <div class="flex items-center gap-2 mt-0.5">
+            <span class="text-xs text-muted-foreground">Namespace:</span>
+            <code class="text-sm font-mono bg-muted px-1.5 py-0.5 rounded">@{org.slug}</code>
+          </div>
         </div>
       </div>
       {isAdmin && (
@@ -76,7 +81,7 @@ const isAdmin = isOwner || userMembership.role === "admin"
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Shield class="h-4 w-4" />
+            <Shield className="h-4 w-4" />
             Members
           </CardTitle>
           <CardDescription>Manage who has access to this organization</CardDescription>
@@ -94,13 +99,13 @@ const isAdmin = isOwner || userMembership.role === "admin"
                     {member.role}
                   </span>
                   {isAdmin && member.userId !== user.sub && (
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="text-destructive h-8 w-8 remove-member-btn" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive h-8 w-8 remove-member-btn"
                       data-user-id={member.userId}
                     >
-                      <Trash2 class="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   )}
                 </div>
@@ -113,7 +118,7 @@ const isAdmin = isOwner || userMembership.role === "admin"
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Package class="h-4 w-4" />
+            <Package className="h-4 w-4" />
             Repositories
           </CardTitle>
           <CardDescription>Repositories owned by this organization</CardDescription>
@@ -121,7 +126,7 @@ const isAdmin = isOwner || userMembership.role === "admin"
         <CardContent className="flex flex-col gap-4">
           {repos.length === 0 ? (
             <div class="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-              <Package class="h-8 w-8 mb-2 opacity-20" />
+              <Package className="h-8 w-8 mb-2 opacity-20" />
               <p class="text-sm">No repositories assigned to this organization.</p>
               {isAdmin && (
                 <Button variant="link" size="sm" className="mt-2">Assign Repository</Button>
@@ -131,12 +136,12 @@ const isAdmin = isOwner || userMembership.role === "admin"
             <div class="flex flex-col divide-y">
               {repos.map((repo) => (
                 <div class="flex items-center justify-between py-3">
-                  <a href={`/repositories/${repo.repositoryName}`} class="text-sm font-medium hover:underline">
+                  <a href={`/repository/${repo.repositoryName}`} class="text-sm font-medium hover:underline">
                     {repo.repositoryName}
                   </a>
                   {isAdmin && (
                     <Button variant="ghost" size="icon" className="text-destructive h-8 w-8">
-                      <Trash2 class="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   )}
                 </div>
@@ -146,6 +151,28 @@ const isAdmin = isOwner || userMembership.role === "admin"
         </CardContent>
       </Card>
     </div>
+
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Terminal className="h-4 w-4" />
+          Push Images
+        </CardTitle>
+        <CardDescription>Use this namespace to push images to this organization</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p class="text-sm text-muted-foreground">Tag and push an image to this organization's namespace:</p>
+        <code class="rounded-md bg-muted px-3 py-2 font-mono text-sm block break-all">
+          docker tag my-image {registryHost}/{org.slug}/my-image:latest
+        </code>
+        <code class="rounded-md bg-muted px-3 py-2 font-mono text-sm block break-all">
+          docker push {registryHost}/{org.slug}/my-image:latest
+        </code>
+        <p class="text-xs text-muted-foreground">
+          Replace <code class="bg-muted px-1 rounded">my-image</code> with your image name. Members with <strong>developer</strong> role or above can push.
+        </p>
+      </CardContent>
+    </Card>
   </div>
 
   <script define:vars={{ orgId: id }}>

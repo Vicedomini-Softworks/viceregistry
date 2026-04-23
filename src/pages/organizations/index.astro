@@ -15,6 +15,7 @@ const orgs = await db
   .select({
     id: organizations.id,
     name: organizations.name,
+    slug: organizations.slug,
     description: organizations.description,
     role: organizationMembers.role,
     createdAt: organizations.createdAt,
@@ -37,7 +38,7 @@ const orgs = await db
     <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {orgs.length === 0 && (
         <div class="col-span-full flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg text-muted-foreground">
-          <Building2 class="h-12 w-12 mb-4 opacity-20" />
+          <Building2 className="h-12 w-12 mb-4 opacity-20" />
           <p>You are not a member of any organization.</p>
         </div>
       )}
@@ -51,13 +52,14 @@ const orgs = await db
                   {org.role}
                 </span>
               </div>
+              <code class="text-xs font-mono text-muted-foreground">@{org.slug}</code>
               <CardDescription className="line-clamp-2 min-h-[2.5rem]">
                 {org.description || "No description provided."}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div class="flex items-center text-xs text-muted-foreground">
-                <Users class="h-3 w-3 mr-1" />
+                <Users className="h-3 w-3 mr-1" />
                 <span>Manage members & repositories</span>
               </div>
             </CardContent>
@@ -75,13 +77,22 @@ const orgs = await db
       const name = prompt("Enter organization name:")
       if (!name) return
 
+      const derivedSlug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 39)
+
+      const slug = prompt("Enter organization slug (3–39 chars, lowercase, hyphens allowed):", derivedSlug)
+      if (!slug) return
+
       const description = prompt("Enter description (optional):")
 
       try {
         const res = await fetch("/api/organizations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, description }),
+          body: JSON.stringify({ name, slug, description }),
         })
 
         if (!res.ok) {
