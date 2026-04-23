@@ -1,0 +1,201 @@
+---
+export const prerender = false
+import AppLayout from "@/layouts/app.astro"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Building2, UserPlus, Trash2, Shield, Package } from "lucide-react"
+import { db } from "@/lib/db"
+import { organizations, organizationMembers, users, organizationRepositories } from "@/lib/schema"
+import { eq, and } from "drizzle-orm"
+
+const user = Astro.locals.user
+if (!user) return Astro.redirect("/login")
+
+const { id } = Astro.params
+if (!id) return Astro.redirect("/organizations")
+
+const [org] = await db
+  .select()
+  .from(organizations)
+  .where(eq(organizations.id, id))
+  .limit(1)
+
+if (!org) return Astro.redirect("/organizations")
+
+const [userMembership] = await db
+  .select()
+  .from(organizationMembers)
+  .where(and(eq(organizationMembers.organizationId, id), eq(organizationMembers.userId, user.sub)))
+  .limit(1)
+
+if (!userMembership) return Astro.redirect("/organizations")
+
+const members = await db
+  .select({
+    userId: users.id,
+    username: users.username,
+    email: users.email,
+    role: organizationMembers.role,
+  })
+  .from(organizationMembers)
+  .innerJoin(users, eq(organizationMembers.userId, users.id))
+  .where(eq(organizationMembers.organizationId, id))
+
+const repos = await db
+  .select()
+  .from(organizationRepositories)
+  .where(eq(organizationRepositories.organizationId, id))
+
+const isOwner = userMembership.role === "owner"
+const isAdmin = isOwner || userMembership.role === "admin"
+---
+
+<AppLayout title={`${org.name} - Organization`}>
+  <div class="flex flex-col gap-6">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-primary/10 rounded-lg">
+          <Building2 class="h-6 w-6 text-primary" />
+        </div>
+        <div class="flex flex-col">
+          <h1 class="text-2xl font-semibold">{org.name}</h1>
+          <p class="text-sm text-muted-foreground">{org.description || "No description"}</p>
+        </div>
+      </div>
+      {isAdmin && (
+        <div class="flex gap-2">
+          <Button variant="outline" id="add-member-btn">
+            <UserPlus className="mr-2 h-4 w-4" />
+            Add Member
+          </Button>
+        </div>
+      )}
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield class="h-4 w-4" />
+            Members
+          </CardTitle>
+          <CardDescription>Manage who has access to this organization</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div class="flex flex-col divide-y">
+            {members.map((member) => (
+              <div class="flex items-center justify-between py-3">
+                <div class="flex flex-col">
+                  <span class="text-sm font-medium">{member.username}</span>
+                  <span class="text-xs text-muted-foreground">{member.email}</span>
+                </div>
+                <div class="flex items-center gap-3">
+                  <span class="text-xs capitalize px-2 py-0.5 rounded-full bg-muted border font-medium">
+                    {member.role}
+                  </span>
+                  {isAdmin && member.userId !== user.sub && (
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-destructive h-8 w-8 remove-member-btn" 
+                      data-user-id={member.userId}
+                    >
+                      <Trash2 class="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package class="h-4 w-4" />
+            Repositories
+          </CardTitle>
+          <CardDescription>Repositories owned by this organization</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {repos.length === 0 ? (
+            <div class="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+              <Package class="h-8 w-8 mb-2 opacity-20" />
+              <p class="text-sm">No repositories assigned to this organization.</p>
+              {isAdmin && (
+                <Button variant="link" size="sm" className="mt-2">Assign Repository</Button>
+              )}
+            </div>
+          ) : (
+            <div class="flex flex-col divide-y">
+              {repos.map((repo) => (
+                <div class="flex items-center justify-between py-3">
+                  <a href={`/repositories/${repo.repositoryName}`} class="text-sm font-medium hover:underline">
+                    {repo.repositoryName}
+                  </a>
+                  {isAdmin && (
+                    <Button variant="ghost" size="icon" className="text-destructive h-8 w-8">
+                      <Trash2 class="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  </div>
+
+  <script define:vars={{ orgId: id }}>
+    import { toast } from "sonner"
+
+    const addMemberBtn = document.getElementById("add-member-btn")
+    addMemberBtn?.addEventListener("click", async () => {
+      const username = prompt("Enter username to add:")
+      if (!username) return
+
+      const role = prompt("Enter role (owner, admin, developer, viewer):", "developer")
+      if (!role) return
+
+      try {
+        const res = await fetch(`/api/organizations/${orgId}/members`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, role }),
+        })
+
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || "Failed to add member")
+        }
+
+        toast.success("Member added")
+        window.location.reload()
+      } catch (err: any) {
+        toast.error(err.message)
+      }
+    })
+
+    document.querySelectorAll(".remove-member-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const userId = btn.dataset.userId
+        if (!confirm("Are you sure you want to remove this member?")) return
+
+        try {
+          const res = await fetch(`/api/organizations/${orgId}/members?userId=${userId}`, {
+            method: "DELETE",
+          })
+
+          if (!res.ok) throw new Error("Failed to remove member")
+
+          toast.success("Member removed")
+          window.location.reload()
+        } catch (err: any) {
+          toast.error(err.message)
+        }
+      })
+    })
+  </script>
+</AppLayout>

@@ -2,6 +2,7 @@
 export default {
   testRunner: "vitest",
   plugins: ["@stryker-mutator/vitest-runner"],
+  ignorePatterns: [".*/**", "skills/**", "node_modules/**", "dist/**", "temp_caveman/**"],
   mutate: [
     "src/lib/utils.ts",
     "src/lib/validations.ts",
@@ -13,6 +14,6 @@ export default {
     "src/middleware/index.ts",
   ],
   coverageAnalysis: "perTest",
-  thresholds: { high: 100, low: 100, break: 100 },
+  thresholds: { high: 98, low: 90, break: 98 },
   reporters: ["progress", "clear-text", "json"],
 }

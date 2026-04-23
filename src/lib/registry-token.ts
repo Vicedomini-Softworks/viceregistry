@@ -1,12 +1,17 @@
 import { SignJWT, importPKCS8 } from "jose"
 import { db } from "@/lib/db"
-import { groupRepositories, groupUsers } from "@/lib/schema"
-import { eq, and } from "drizzle-orm"
+import { organizationRepositories, organizationMembers, userRepositoryPermissions } from "@/lib/schema"
+import { eq, and, or } from "drizzle-orm"
 
 export interface TokenClaims {
   subject: string
   service: string
   scope: string
+}
+
+export interface TokenConstraints {
+  organizationId?: string | null
+  repositoryName?: string | null
 }
 
 export async function issueRegistryToken(claims: TokenClaims): Promise<string> {
@@ -34,35 +39,74 @@ function parseScopeToAccess(scope: string) {
   return [{ type, name, actions }]
 }
 
-export async function computeGrantedScope(requestedScope: string, roleNames: string[], userId?: string): Promise<string> {
+export async function computeGrantedScope(
+  requestedScope: string,
+  roleNames: string[],
+  userId?: string,
+  constraints?: TokenConstraints
+): Promise<string> {
   if (!requestedScope) return ""
   const parts = requestedScope.split(":")
   if (parts.length < 3) return ""
   const [type, name, actionsStr] = parts
   const requestedActions = actionsStr.split(",").filter(Boolean)
 
+  // 1. Check Token Constraints first
+  if (constraints) {
+    if (constraints.repositoryName && constraints.repositoryName !== name) {
+      return "" // Token is scoped to a different repository
+    }
+    // Organization constraint will be checked during permission resolution
+  }
+
   let isAdmin = roleNames.includes("admin")
   let canPush = isAdmin || roleNames.includes("push")
   let canPull = canPush || roleNames.includes("viewer")
 
   if (userId && type === "repository") {
-    const groupAccess = await db
-      .select({ role: groupUsers.role })
-      .from(groupRepositories)
-      .innerJoin(groupUsers, eq(groupRepositories.groupId, groupUsers.groupId))
-      .where(and(eq(groupRepositories.repositoryName, name), eq(groupUsers.userId, userId)))
+    // 2. Check Organization-level access
+    const orgAccess = await db
+      .select({ role: organizationMembers.role, orgId: organizationMembers.organizationId })
+      .from(organizationRepositories)
+      .innerJoin(organizationMembers, eq(organizationRepositories.organizationId, organizationMembers.organizationId))
+      .where(and(eq(organizationRepositories.repositoryName, name), eq(organizationMembers.userId, userId)))
       .limit(1)
 
-    if (groupAccess.length > 0) {
-      const gRole = groupAccess[0].role
-      if (gRole === "owner" || gRole === "admin") {
+    if (orgAccess.length > 0) {
+      const { role: oRole, orgId } = orgAccess[0]
+      
+      // If token is constrained to an org, ensure it matches
+      if (!constraints?.organizationId || constraints.organizationId === orgId) {
+        if (oRole === "owner" || oRole === "admin") {
+          isAdmin = true
+          canPush = true
+          canPull = true
+        } else if (oRole === "developer" || oRole === "push") {
+          canPush = true
+          canPull = true
+        } else if (oRole === "member" || oRole === "viewer" || oRole === "pull") {
+          canPull = true
+        }
+      }
+    }
+
+    // 3. Check Direct Repository-level access (User-specific)
+    const directAccess = await db
+      .select({ permission: userRepositoryPermissions.permission })
+      .from(userRepositoryPermissions)
+      .where(and(eq(userRepositoryPermissions.repositoryName, name), eq(userRepositoryPermissions.userId, userId)))
+      .limit(1)
+
+    if (directAccess.length > 0) {
+      const { permission } = directAccess[0]
+      if (permission === "admin") {
         isAdmin = true
         canPush = true
         canPull = true
-      } else if (gRole === "push") {
+      } else if (permission === "push") {
         canPush = true
         canPull = true
-      } else if (gRole === "member" || gRole === "pull") {
+      } else if (permission === "pull") {
         canPull = true
       }
     }

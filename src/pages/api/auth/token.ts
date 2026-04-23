@@ -47,12 +47,17 @@ export const GET: APIRoute = async ({ request, url }) => {
   }
 
   let isAuthenticated = false
+  let tokenConstraints: { organizationId?: string | null; repositoryName?: string | null } | undefined
 
   if (password.startsWith("vr_")) {
     const tokens = await db.select().from(accessTokens).where(eq(accessTokens.userId, user.id))
     for (const t of tokens) {
       if (await bcrypt.compare(password, t.tokenHash)) {
         isAuthenticated = true
+        tokenConstraints = {
+          organizationId: t.organizationId,
+          repositoryName: t.repositoryName,
+        }
         await db.update(accessTokens).set({ lastUsedAt: new Date() }).where(eq(accessTokens.id, t.id))
         break
       }
@@ -75,7 +80,7 @@ export const GET: APIRoute = async ({ request, url }) => {
     .where(eq(userRoles.userId, user.id))
   const roleNames = roleRows.map((r) => r.name)
 
-  const grantedScope = await computeGrantedScope(scope, roleNames, user.id)
+  const grantedScope = await computeGrantedScope(scope, roleNames, user.id, tokenConstraints)
 
   const token = await issueRegistryToken({
     subject: username,

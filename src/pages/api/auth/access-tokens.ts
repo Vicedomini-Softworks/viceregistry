@@ -10,9 +10,18 @@ export const GET: APIRoute = async ({ locals }) => {
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
   const tokens = await db
-    .select({ id: accessTokens.id, name: accessTokens.name, prefix: accessTokens.prefix, lastUsedAt: accessTokens.lastUsedAt, createdAt: accessTokens.createdAt })
+    .select({
+      id: accessTokens.id,
+      name: accessTokens.name,
+      prefix: accessTokens.prefix,
+      tokenPreview: accessTokens.tokenPreview,
+      expiresAt: accessTokens.expiresAt,
+      lastUsedAt: accessTokens.lastUsedAt,
+      createdAt: accessTokens.createdAt,
+    })
     .from(accessTokens)
     .where(eq(accessTokens.userId, userId))
+    .orderBy(accessTokens.createdAt)
 
   return Response.json(tokens)
 }
@@ -28,16 +37,28 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return Response.json({ error: "Invalid JSON" }, { status: 400 })
   }
 
-  if (!body.name) return Response.json({ error: "Name required" }, { status: 400 })
+  const { name, organizationId, repositoryName } = body
+  if (!name) return Response.json({ error: "Name required" }, { status: 400 })
 
-  const rawToken = "vr_" + crypto.randomBytes(32).toString("hex")
+  const prefix = "vr_"
+  const randomPart = crypto.randomBytes(32).toString("hex")
+  const rawToken = prefix + randomPart
   const tokenHash = await bcrypt.hash(rawToken, 12)
+
+  const tokenPreview = `${rawToken.slice(0, 3)}...${rawToken.slice(-3)}`
+
+  const expiresAt = new Date()
+  expiresAt.setFullYear(expiresAt.getFullYear() + 1)
 
   await db.insert(accessTokens).values({
     userId,
-    name: body.name,
+    name,
     tokenHash,
-    prefix: "vr_",
+    prefix,
+    tokenPreview,
+    organizationId: organizationId || null,
+    repositoryName: repositoryName || null,
+    expiresAt,
   })
 
   return Response.json({ token: rawToken })

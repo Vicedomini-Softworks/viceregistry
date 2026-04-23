@@ -4,9 +4,12 @@ import AppLayout from "@/layouts/app.astro"
 import TagList from "@/components/registry/TagList"
 import Breadcrumb from "@/components/layout/Breadcrumb"
 import { db } from "@/lib/db"
-import { imageMetadata } from "@/lib/schema"
+import { imageMetadata, userRepositoryPermissions, users } from "@/lib/schema"
 import { syncRepository } from "@/lib/registry-sync"
-import { eq, asc } from "drizzle-orm"
+import { eq, asc, and } from "drizzle-orm"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Shield, Trash2, UserPlus } from "lucide-react"
 
 const name = Astro.params.name ?? ""
 if (!name) return Astro.redirect("/dashboard")
@@ -27,7 +30,33 @@ const tagRows = await db
   .orderBy(asc(imageMetadata.tag))
 
 const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
-const isAdmin = Astro.locals.user?.roles.includes("admin") ?? false
+const user = Astro.locals.user
+const isGlobalAdmin = user?.roles.includes("admin") ?? false
+
+// Check for direct admin permission
+const [directAdmin] = user ? await db
+  .select()
+  .from(userRepositoryPermissions)
+  .where(
+    and(
+      eq(userRepositoryPermissions.repositoryName, name),
+      eq(userRepositoryPermissions.userId, user.sub),
+      eq(userRepositoryPermissions.permission, "admin")
+    )
+  )
+  .limit(1) : []
+
+const canManagePermissions = isGlobalAdmin || !!directAdmin
+
+const permissions = canManagePermissions ? await db
+  .select({
+    userId: users.id,
+    username: users.username,
+    permission: userRepositoryPermissions.permission,
+  })
+  .from(userRepositoryPermissions)
+  .innerJoin(users, eq(userRepositoryPermissions.userId, users.id))
+  .where(eq(userRepositoryPermissions.repositoryName, name)) : []
 ---
 
 <AppLayout title={name}>
@@ -39,24 +68,131 @@ const isAdmin = Astro.locals.user?.roles.includes("admin") ?? false
         { label: name },
       ]}
     />
-    <div>
-      <h1 class="text-2xl font-semibold font-mono">{name}</h1>
-      <p class="text-sm text-muted-foreground mt-1">
-        {tagRows.length} tag{tagRows.length === 1 ? "" : "s"}
-      </p>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold font-mono">{name}</h1>
+        <p class="text-sm text-muted-foreground mt-1">
+          {tagRows.length} tag{tagRows.length === 1 ? "" : "s"}
+        </p>
+      </div>
     </div>
-    <TagList
-      client:load
-      name={name}
-      tags={tagRows.map((r) => ({
-        tag: r.tag,
-        digest: r.digest ?? null,
-        totalSize: r.totalSize ?? null,
-        os: r.os ?? null,
-        architecture: r.architecture ?? null,
-      }))}
-      registryHost={registryHost}
-      isAdmin={isAdmin}
-    />
+
+    <div class="flex flex-col gap-8">
+      <section>
+        <h2 class="text-lg font-semibold mb-4">Tags</h2>
+        <TagList
+          client:load
+          name={name}
+          tags={tagRows.map((r) => ({
+            tag: r.tag,
+            digest: r.digest ?? null,
+            totalSize: r.totalSize ?? null,
+            os: r.os ?? null,
+            architecture: r.architecture ?? null,
+          }))}
+          registryHost={registryHost}
+          isAdmin={isGlobalAdmin}
+        />
+      </section>
+
+      {canManagePermissions && (
+        <section>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield class="h-4 w-4" />
+                  Granular Permissions
+                </CardTitle>
+                <CardDescription>Manage direct user access to this repository</CardDescription>
+              </div>
+              <Button size="sm" id="add-permission-btn">
+                <UserPlus class="h-4 w-4 mr-2" />
+                Add User
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div class="flex flex-col divide-y">
+                {permissions.length === 0 ? (
+                  <p class="py-4 text-sm text-muted-foreground text-center">No granular permissions set.</p>
+                ) : (
+                  permissions.map((p) => (
+                    <div class="flex items-center justify-between py-3">
+                      <div class="flex flex-col">
+                        <span class="text-sm font-medium">{p.username}</span>
+                      </div>
+                      <div class="flex items-center gap-3">
+                        <span class="text-xs uppercase px-2 py-0.5 rounded-full bg-muted border font-medium">
+                          {p.permission}
+                        </span>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="text-destructive h-8 w-8 remove-permission-btn" 
+                          data-user-id={p.userId}
+                        >
+                          <Trash2 class="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+    </div>
   </div>
+
+  <script define:vars={{ repoName: name }}>
+    import { toast } from "sonner"
+
+    const addBtn = document.getElementById("add-permission-btn")
+    addBtn?.addEventListener("click", async () => {
+      const username = prompt("Enter username:")
+      if (!username) return
+
+      const permission = prompt("Enter permission (pull, push, admin):", "pull")
+      if (!permission) return
+
+      try {
+        const res = await fetch(`/api/repositories/${repoName}/permissions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, permission }),
+        })
+
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || "Failed to add permission")
+        }
+
+        toast.success("Permission added")
+        window.location.reload()
+      } catch (err: any) {
+        toast.error(err.message)
+      }
+    })
+
+    document.querySelectorAll(".remove-permission-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const userId = btn.dataset.userId
+        if (!confirm("Are you sure you want to remove this permission?")) return
+
+        try {
+          const res = await fetch(`/api/repositories/${repoName}/permissions?userId=${userId}`, {
+            method: "DELETE",
+          })
+
+          if (!res.ok) throw new Error("Failed to remove permission")
+
+          toast.success("Permission removed")
+          window.location.reload()
+        } catch (err: any) {
+          toast.error(err.message)
+        }
+      })
+    })
+  </script>
 </AppLayout>

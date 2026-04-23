@@ -63,38 +63,52 @@ export const imageMetadata = pgTable(
   (t) => [uniqueIndex("image_metadata_repo_tag_idx").on(t.repository, t.tag)],
 )
 
-export const groups = pgTable("groups", {
+export const organizations = pgTable("organizations", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
   description: text("description"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 })
 
-export const groupUsers = pgTable(
-  "group_users",
+export const organizationMembers = pgTable(
+  "organization_members",
   {
-    groupId: uuid("group_id")
+    organizationId: uuid("organization_id")
       .notNull()
-      .references(() => groups.id, { onDelete: "cascade" }),
+      .references(() => organizations.id, { onDelete: "cascade" }),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    role: text("role").notNull().default("member"), // 'owner', 'admin', 'member'
+    role: text("role").notNull().default("member"), // 'owner', 'admin', 'developer', 'viewer'
   },
-  (t) => [primaryKey({ columns: [t.groupId, t.userId] })],
+  (t) => [primaryKey({ columns: [t.organizationId, t.userId] })],
 )
 
-export const groupRepositories = pgTable(
-  "group_repositories",
+export const organizationRepositories = pgTable(
+  "organization_repositories",
   {
-    groupId: uuid("group_id")
+    organizationId: uuid("organization_id")
       .notNull()
-      .references(() => groups.id, { onDelete: "cascade" }),
+      .references(() => organizations.id, { onDelete: "cascade" }),
     repositoryName: text("repository_name")
       .notNull()
       .references(() => repositories.name, { onDelete: "cascade" }),
   },
-  (t) => [primaryKey({ columns: [t.groupId, t.repositoryName] })],
+  (t) => [primaryKey({ columns: [t.organizationId, t.repositoryName] })],
+)
+
+export const userRepositoryPermissions = pgTable(
+  "user_repository_permissions",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    repositoryName: text("repository_name")
+      .notNull()
+      .references(() => repositories.name, { onDelete: "cascade" }),
+    permission: text("permission").notNull().default("pull"), // 'pull', 'push', 'admin'
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.repositoryName] })],
 )
 
 export const accessTokens = pgTable("access_tokens", {
@@ -105,6 +119,10 @@ export const accessTokens = pgTable("access_tokens", {
   name: text("name").notNull(),
   tokenHash: text("token_hash").notNull(),
   prefix: text("prefix").notNull(), // e.g. "vr_"
+  tokenPreview: text("token_preview"), // e.g. "vr_a...456"
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  repositoryName: text("repository_name"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 })

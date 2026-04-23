@@ -2,13 +2,46 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest"
 import { generateKeyPair, exportPKCS8, importSPKI, jwtVerify } from "jose"
 import { issueRegistryToken, computeGrantedScope } from "@/lib/registry-token"
 
-const { mockSelect, mockLimit } = vi.hoisted(() => {
-  const mockLimit = vi.fn().mockResolvedValue([])
-  const mockWhere = vi.fn(() => ({ limit: mockLimit }))
-  const mockInnerJoin = vi.fn(() => ({ where: mockWhere }))
-  const mockFrom = vi.fn(() => ({ innerJoin: mockInnerJoin }))
-  const mockSelect = vi.fn(() => ({ from: mockFrom }))
-  return { mockSelect, mockLimit }
+const { mockSelect, mockLimit, mockWhere, mockFrom, mockInnerJoin, mockExecute } = vi.hoisted(() => {
+  const mockExecute = vi.fn().mockResolvedValue([])
+  let lastSelectArgs: any = null
+
+  const queryInterface = {
+    innerJoin: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockImplementation(function() {
+      return {
+        then: (onFullfilled: any) => {
+          // Verify select was called with expected fields to kill ObjectLiteral mutants
+          if (lastSelectArgs && Object.keys(lastSelectArgs).length === 0) {
+             return Promise.resolve([]).then(onFullfilled)
+          }
+          return mockExecute().then(onFullfilled)
+        }
+      }
+    }),
+    then: (onFullfilled: any) => {
+      if (lastSelectArgs && Object.keys(lastSelectArgs).length === 0) {
+         return Promise.resolve([]).then(onFullfilled)
+      }
+      return mockExecute().then(onFullfilled)
+    }
+  }
+
+  const mockFrom = vi.fn().mockReturnValue(queryInterface)
+  const mockSelect = vi.fn().mockImplementation((args) => {
+    lastSelectArgs = args
+    return { from: mockFrom }
+  })
+
+  return { 
+    mockSelect, 
+    mockFrom, 
+    mockInnerJoin: queryInterface.innerJoin, 
+    mockWhere: queryInterface.where, 
+    mockLimit: queryInterface.limit, 
+    mockExecute 
+  }
 })
 
 vi.mock("@/lib/db", () => ({
@@ -30,8 +63,13 @@ beforeEach(() => {
   vi.unstubAllEnvs()
   vi.stubEnv("REGISTRY_TOKEN_PRIVATE_KEY", privatePem.replace(/\n/g, "\\n"))
   vi.stubEnv("REGISTRY_TOKEN_ISSUER", "test-issuer")
-  mockLimit.mockReset()
-  mockLimit.mockResolvedValue([])
+  mockExecute.mockReset()
+  mockExecute.mockResolvedValue([])
+  mockSelect.mockClear()
+  mockFrom.mockClear()
+  mockInnerJoin.mockClear()
+  mockWhere.mockClear()
+  mockLimit.mockClear()
 })
 
 describe("issueRegistryToken", () => {
@@ -86,6 +124,26 @@ describe("issueRegistryToken", () => {
     expect(payload.iss).toBe("test-issuer")
   })
 
+  it("handles newlines in private key correctly", async () => {
+    const multiLineKey = privatePem.replace(/\n/g, "\\n")
+    vi.stubEnv("REGISTRY_TOKEN_PRIVATE_KEY", multiLineKey)
+    const token = await issueRegistryToken({ subject: "alice", service: "svc", scope: "repository:r:pull" })
+    const { payload } = await jwtVerify(token, publicKey)
+    expect(payload.access).toEqual([{ type: "repository", name: "r", actions: ["pull"] }])
+  })
+
+  it("filters empty actions in scope", async () => {
+    const token = await issueRegistryToken({
+      subject: "alice",
+      service: "svc",
+      scope: "repository:myrepo:pull,,push,",
+    })
+    const { payload } = await jwtVerify(token, publicKey)
+    expect(payload.access).toEqual([
+      { type: "repository", name: "myrepo", actions: ["pull", "push"] },
+    ])
+  })
+
   it("defaults issuer to viceregistry when env not set", async () => {
     vi.unstubAllEnvs()
     vi.stubEnv("REGISTRY_TOKEN_PRIVATE_KEY", privatePem.replace(/\n/g, "\\n"))
@@ -132,55 +190,131 @@ describe("computeGrantedScope", () => {
     expect(await computeGrantedScope("repository:r:pull,push", ["admin"])).toBe("repository:r:pull,push")
   })
 
-  it("grants owner group role all actions", async () => {
-    mockLimit.mockResolvedValueOnce([{ role: "owner" }])
-    expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull,push,delete,*")
+  it("filters empty actions in requested scope", async () => {
+    expect(await computeGrantedScope("repository:r:pull,,push,", ["admin"])).toBe("repository:r:pull,push")
   })
 
-  it("grants admin group role all actions", async () => {
-    mockLimit.mockResolvedValueOnce([{ role: "admin" }])
-    expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull,push,delete,*")
+  it("returns empty string if requestedScope is empty", async () => {
+    expect(await computeGrantedScope("", ["admin"])).toBe("")
   })
 
-  it("grants push group role push and pull", async () => {
-    mockLimit.mockResolvedValueOnce([{ role: "push" }])
-    expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull,push")
+  it("handles userId without repository type and ensures no DB calls", async () => {
+    mockSelect.mockClear()
+    expect(await computeGrantedScope("registry:catalog:*", ["viewer"], "u1")).toBe("")
+    expect(mockSelect).not.toHaveBeenCalled()
   })
 
-  it("grants member group role pull", async () => {
-    mockLimit.mockResolvedValueOnce([{ role: "member" }])
-    expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull")
+  it("handles repository type without userId and ensures no DB calls", async () => {
+    mockSelect.mockClear()
+    expect(await computeGrantedScope("repository:r:pull", ["viewer"], undefined)).toBe("repository:r:pull")
+    expect(mockSelect).not.toHaveBeenCalled()
   })
 
-  it("grants pull group role pull", async () => {
-    mockLimit.mockResolvedValueOnce([{ role: "pull" }])
-    expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("repository:r:pull")
+  it("filters multiple empty actions in requested scope", async () => {
+    expect(await computeGrantedScope("repository:r:pull,,,push,", ["admin"])).toBe("repository:r:pull,push")
   })
 
-  it("grants nothing for unknown group role", async () => {
-    mockLimit.mockResolvedValueOnce([{ role: "unknown" }])
-    expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "user1")).toBe("")
+  it("handles neither userId nor repository type", async () => {
+    expect(await computeGrantedScope("registry:catalog:*", ["admin"], undefined)).toBe("registry:catalog:*")
   })
 
-  it("handles missing userId correctly", async () => {
-    expect(await computeGrantedScope("repository:r:pull", [], undefined)).toBe("")
+  it("handles userId false and repository type true", async () => {
+    expect(await computeGrantedScope("repository:r:pull", ["viewer"], "")).toBe("repository:r:pull")
   })
 
-  it("handles missing userId correctly (true)", async () => {
-    expect(await computeGrantedScope("repository:r:pull", [], true as any)).toBe("")
+  it("handles userId true and repository type false", async () => {
+    expect(await computeGrantedScope("registry:catalog:*", ["viewer"], "u1")).toBe("")
   })
 
-  it("handles non-repository type correctly with userId", async () => {
-    expect(await computeGrantedScope("registry:catalog:*", [], "user1")).toBe("")
+  it("handles both false", async () => {
+    expect(await computeGrantedScope("registry:catalog:*", ["admin"], "")).toBe("registry:catalog:*")
   })
 
-  it("handles empty group access correctly", async () => {
-    mockLimit.mockResolvedValueOnce([])
-    expect(await computeGrantedScope("repository:r:pull", [], "user1")).toBe("")
+  describe("Token Constraints", () => {
+    it("returns empty string if repository name mismatch", async () => {
+      expect(await computeGrantedScope("repository:r1:pull", ["admin"], "u1", { repositoryName: "r2" })).toBe("")
+    })
+
+    it("grants access if repository name matches", async () => {
+      expect(await computeGrantedScope("repository:r1:pull", ["admin"], "u1", { repositoryName: "r1" })).toBe("repository:r1:pull")
+    })
+
+    it("grants access if organization matches", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "owner", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r1:pull", [], "u1", { organizationId: "org1" })).toBe("repository:r1:pull")
+    })
+
+    it("returns empty string if organization mismatch", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "owner", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r1:pull", [], "u1", { organizationId: "org2" })).toBe("")
+    })
   })
 
-  it("handles empty group access correctly (negative length)", async () => {
-    mockLimit.mockResolvedValueOnce({ length: -1 } as any)
-    expect(await computeGrantedScope("repository:r:pull", [], "user1")).toBe("")
+  describe("Organization Roles", () => {
+    it("grants owner full access", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "owner", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "u1")).toBe("repository:r:pull,push,delete,*")
+    })
+
+    it("grants admin full access", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "admin", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "u1")).toBe("repository:r:pull,push,delete,*")
+    })
+
+    it("grants developer push and pull", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "developer", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r:pull,push,delete", [], "u1")).toBe("repository:r:pull,push")
+    })
+
+    it("grants push role push and pull", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "push", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r:pull,push,delete", [], "u1")).toBe("repository:r:pull,push")
+    })
+
+    it("grants viewer pull only", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "viewer", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r:pull,push", [], "u1")).toBe("repository:r:pull")
+    })
+
+    it("grants member pull only", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "member", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r:pull,push", [], "u1")).toBe("repository:r:pull")
+    })
+
+    it("grants pull role pull only", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "pull", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r:pull,push", [], "u1")).toBe("repository:r:pull")
+    })
+
+    it("grants nothing for other roles", async () => {
+      mockExecute.mockResolvedValueOnce([{ role: "guest", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:r:pull,push", [], "u1")).toBe("")
+    })
+  })
+
+  describe("Direct Repository Permissions", () => {
+    it("grants direct admin full access", async () => {
+      mockExecute.mockResolvedValueOnce([]) // No org access
+      mockExecute.mockResolvedValueOnce([{ permission: "admin" }]) // Direct access
+      expect(await computeGrantedScope("repository:r:pull,push,delete,*", [], "u1")).toBe("repository:r:pull,push,delete,*")
+    })
+
+    it("grants direct push access", async () => {
+      mockExecute.mockResolvedValueOnce([])
+      mockExecute.mockResolvedValueOnce([{ permission: "push" }])
+      expect(await computeGrantedScope("repository:r:pull,push,delete", [], "u1")).toBe("repository:r:pull,push")
+    })
+
+    it("grants direct pull access", async () => {
+      mockExecute.mockResolvedValueOnce([])
+      mockExecute.mockResolvedValueOnce([{ permission: "pull" }])
+      expect(await computeGrantedScope("repository:r:pull,push", [], "u1")).toBe("repository:r:pull")
+    })
+
+    it("grants nothing for unknown direct permission", async () => {
+      mockExecute.mockResolvedValueOnce([])
+      mockExecute.mockResolvedValueOnce([{ permission: "none" }])
+      expect(await computeGrantedScope("repository:r:pull,push", [], "u1")).toBe("")
+    })
   })
 })
