@@ -5,6 +5,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    env: {
+      REGISTRY_URL: "http://registry:5000",
+    },
     coverage: {
       provider: "v8",
       include: [

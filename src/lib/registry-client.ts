@@ -1,10 +1,8 @@
-const REGISTRY_URL = process.env.REGISTRY_URL ?? "http://localhost:5000"
-
 const MANIFEST_ACCEPT =
   "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json"
 
 async function registryFetch(path: string, options?: RequestInit) {
-  const url = `${REGISTRY_URL}/v2${path}`
+  const url = `${process.env.REGISTRY_URL ?? "http://localhost:5000"}/v2${path}`
   return fetch(url, {
     ...options,
     headers: {
