@@ -51,6 +51,7 @@ services:
       REGISTRY_AUTH_TOKEN_SERVICE: registry.local
       REGISTRY_AUTH_TOKEN_ISSUER: viceregistry
       REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /certs/token.crt
+      REGISTRY_TOKEN_PUBLIC_KEY: ${REGISTRY_TOKEN_PUBLIC_KEY}
       # S3 storage via MinIO (local dev)
       REGISTRY_STORAGE: s3
       REGISTRY_STORAGE_S3_ACCESSKEY: minioadmin
@@ -61,8 +62,8 @@ services:
       REGISTRY_STORAGE_S3_FORCEPATHSTYLE: "true"
       REGISTRY_STORAGE_DELETE_ENABLED: "true"
       REGISTRY_LOG_LEVEL: warn
-    volumes:
-      - ./keys/registry-token.crt:/certs/token.crt:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mkdir -p /certs && printf \"%b\\n\" \"$$REGISTRY_TOKEN_PUBLIC_KEY\" > /certs/token.crt && exec /entrypoint.sh /etc/docker/registry/config.yml"]
     depends_on:
       minio:
         condition: service_healthy
