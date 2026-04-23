@@ -3,14 +3,31 @@ export const prerender = false
 import AppLayout from "@/layouts/app.astro"
 import TagList from "@/components/registry/TagList"
 import Breadcrumb from "@/components/layout/Breadcrumb"
-import { listTags } from "@/lib/registry-client"
+import { db } from "@/lib/db"
+import { imageMetadata } from "@/lib/schema"
+import { syncRepository } from "@/lib/registry-sync"
+import { eq, asc } from "drizzle-orm"
 
 const name = Astro.params.name ?? ""
 if (!name) return Astro.redirect("/dashboard")
 
-const tags = await listTags(name)
+// Sync this repo (skips if fresh, runs in background if stale)
+syncRepository(name).catch((e) => console.error("Repo sync failed:", e))
+
+const tagRows = await db
+  .select({
+    tag: imageMetadata.tag,
+    digest: imageMetadata.digest,
+    totalSize: imageMetadata.totalSize,
+    os: imageMetadata.os,
+    architecture: imageMetadata.architecture,
+  })
+  .from(imageMetadata)
+  .where(eq(imageMetadata.repository, name))
+  .orderBy(asc(imageMetadata.tag))
+
 const registryHost = import.meta.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
-const isAdmin = Astro.locals.user.roles.includes("admin")
+const isAdmin = Astro.locals.user?.roles.includes("admin") ?? false
 ---
 
 <AppLayout title={name}>
@@ -25,13 +42,19 @@ const isAdmin = Astro.locals.user.roles.includes("admin")
     <div>
       <h1 class="text-2xl font-semibold font-mono">{name}</h1>
       <p class="text-sm text-muted-foreground mt-1">
-        {tags.length} tag{tags.length === 1 ? "" : "s"}
+        {tagRows.length} tag{tagRows.length === 1 ? "" : "s"}
       </p>
     </div>
     <TagList
       client:load
       name={name}
-      tags={tags}
+      tags={tagRows.map((r) => ({
+        tag: r.tag,
+        digest: r.digest ?? null,
+        totalSize: r.totalSize ?? null,
+        os: r.os ?? null,
+        architecture: r.architecture ?? null,
+      }))}
       registryHost={registryHost}
       isAdmin={isAdmin}
     />

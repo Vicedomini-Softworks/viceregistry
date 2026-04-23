@@ -6,15 +6,18 @@ The app acts as a Docker Registry token auth server — the registry delegates a
 
 ## Features
 
+- **Public browsing** — dashboard, repositories, and image details are accessible without login
+- **Search** — live search across repository names and image tags (debounced, backed by PostgreSQL)
 - Browse repositories, tags, and image layer details
 - Copy pull commands to clipboard
-- Delete images (admin only)
+- Delete images (admin only, requires sign-in)
 - JWT-based web sessions
 - Docker Registry token auth (RS256, Docker auth spec)
 - User management with roles: `admin`, `push`, `viewer`
 - Audit log
-- PostgreSQL for users and roles
+- PostgreSQL for users, roles, and registry metadata cache
 - S3-compatible storage for registry blobs (AWS S3 or MinIO)
+- Registry metadata (repos, tags, OS, arch, size) cached in PG — refreshed automatically every 5 minutes
 
 ## Prerequisites
 
@@ -72,7 +75,7 @@ Fill in `.env`:
 ### 4. Run migrations and seed
 
 ```bash
-# Apply database schema
+# Apply database schema (users, roles, repositories, image metadata)
 npm run db:migrate
 
 # Insert default roles (admin, push, viewer)
@@ -81,6 +84,11 @@ psql $DATABASE_URL -f drizzle/seed/0001_default_roles.sql
 # Create the initial admin user
 npm run db:seed
 ```
+
+Migrations are applied in order from `drizzle/migrations/`. The schema includes:
+
+- `users`, `roles`, `user_roles`, `audit_log` — auth and access control
+- `repositories`, `image_metadata` — registry metadata cache (populated automatically from the registry on first page load; refreshed every 5 minutes)
 
 ### 5. Start the local stack
 

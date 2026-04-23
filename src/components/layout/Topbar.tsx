@@ -8,10 +8,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Settings, LogOut, ChevronDown } from "lucide-react"
+import { Settings, LogOut, ChevronDown, LogIn } from "lucide-react"
 
 interface Props {
-  username: string
+  username: string | null
   roles: string[]
 }
 
@@ -22,6 +22,19 @@ export default function Topbar({ username }: Props) {
     setLoading(true)
     await fetch("/api/auth/logout", { method: "POST" })
     window.location.href = "/login"
+  }
+
+  if (!username) {
+    return (
+      <header className="flex h-14 items-center justify-end border-b bg-card px-4">
+        <Button variant="outline" size="sm" asChild>
+          <a href="/login" className="flex items-center gap-1.5">
+            <LogIn className="h-4 w-4" />
+            Sign in
+          </a>
+        </Button>
+      </header>
+    )
   }
 
   return (

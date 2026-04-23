@@ -1,6 +1,4 @@
 ---
 export const prerender = false
-const user = Astro.locals.user
-if (user) return Astro.redirect("/dashboard")
-return Astro.redirect("/login")
+return Astro.redirect("/dashboard")
 ---

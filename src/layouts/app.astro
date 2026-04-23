@@ -4,7 +4,7 @@ import Sidebar from "@/components/layout/Sidebar"
 import Topbar from "@/components/layout/Topbar"
 
 const { title = "ViceRegistry" } = Astro.props
-const { user } = Astro.locals
+const user = Astro.locals.user
 ---
 
 <html lang="en">
@@ -17,14 +17,14 @@ const { user } = Astro.locals
   <body class="flex h-screen overflow-hidden bg-background text-foreground">
     <Sidebar
       client:load
-      roles={user.roles}
+      roles={user?.roles ?? []}
       currentPath={Astro.url.pathname}
     />
     <div class="flex flex-1 flex-col overflow-hidden">
       <Topbar
         client:load
-        username={user.username}
-        roles={user.roles}
+        username={user?.username ?? null}
+        roles={user?.roles ?? []}
       />
       <main class="flex-1 overflow-y-auto p-6">
         <slot />

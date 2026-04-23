@@ -2,10 +2,27 @@
 export const prerender = false
 import AppLayout from "@/layouts/app.astro"
 import RepositoryList from "@/components/registry/RepositoryList"
-import { listRepositories } from "@/lib/registry-client"
+import { db } from "@/lib/db"
+import { repositories } from "@/lib/schema"
+import { syncRepositories } from "@/lib/registry-sync"
+import { asc } from "drizzle-orm"
 
-const repositories = await listRepositories()
+// Sync repository list from registry in the background (non-blocking)
+// Fire-and-forget — the page renders with what's already in PG
+syncRepositories().catch((e) => console.error("Registry sync failed:", e))
+
+const allRepos = await db
+  .select({
+    name: repositories.name,
+    tagCount: repositories.tagCount,
+    sizeBytes: repositories.sizeBytes,
+    lastSyncedAt: repositories.lastSyncedAt,
+  })
+  .from(repositories)
+  .orderBy(asc(repositories.name))
+
 const registryHost = import.meta.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
+const isAdmin = Astro.locals.user?.roles.includes("admin") ?? false
 ---
 
 <AppLayout title="Dashboard">
@@ -13,13 +30,19 @@ const registryHost = import.meta.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
     <div>
       <h1 class="text-2xl font-semibold">Repositories</h1>
       <p class="text-sm text-muted-foreground mt-1">
-        {repositories.length} repositor{repositories.length === 1 ? "y" : "ies"} in your registry
+        {allRepos.length} repositor{allRepos.length === 1 ? "y" : "ies"} in your registry
       </p>
     </div>
     <RepositoryList
       client:load
-      repositories={repositories}
+      repositories={allRepos.map((r) => ({
+        name: r.name,
+        tagCount: r.tagCount,
+        sizeBytes: r.sizeBytes ?? null,
+        lastSyncedAt: r.lastSyncedAt.toISOString(),
+      }))}
       registryHost={registryHost}
+      isAdmin={isAdmin}
     />
   </div>
 </AppLayout>

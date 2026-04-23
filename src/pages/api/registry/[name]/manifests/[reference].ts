@@ -20,7 +20,7 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
   const { name, reference } = params
   if (!name || !reference) return Response.json({ error: "Missing params" }, { status: 400 })
 
-  if (!locals.user.roles.includes("admin")) {
+  if (!locals.user?.roles.includes("admin")) {
     return Response.json({ error: "Forbidden" }, { status: 403 })
   }
 

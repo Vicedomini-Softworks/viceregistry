@@ -11,6 +11,6 @@ interface SessionPayload {
 
 declare namespace App {
   interface Locals {
-    user: SessionPayload
+    user?: SessionPayload
   }
 }
