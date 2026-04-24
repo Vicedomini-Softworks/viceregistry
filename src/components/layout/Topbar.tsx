@@ -5,14 +5,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Settings, LogOut, ChevronDown, LogIn, Building2 } from "lucide-react"
+import { LogOut, ChevronDown, LogIn } from "lucide-react"
 
 interface Props {
   username: string | null
-  roles: string[]
 }
 
 export default function Topbar({ username }: Props) {
@@ -52,19 +50,6 @@ export default function Topbar({ username }: Props) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuItem asChild>
-            <a href="/organizations" className="flex items-center gap-2">
-              <Building2 className="h-4 w-4" />
-              Organizations
-            </a>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <a href="/settings" className="flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              Settings
-            </a>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={handleLogout}
             disabled={loading}

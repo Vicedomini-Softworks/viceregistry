@@ -44,6 +44,8 @@ export const repositories = pgTable("repositories", {
   name: text("name").primaryKey(),
   tagCount: integer("tag_count").notNull().default(0),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
+  /** public = listed for anonymous users; private = only users with registry pull (RBAC) */
+  visibility: text("visibility").notNull().default("public"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
 })
 

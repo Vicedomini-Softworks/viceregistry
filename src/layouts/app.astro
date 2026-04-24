@@ -21,11 +21,7 @@ const user = Astro.locals.user
       currentPath={Astro.url.pathname}
     />
     <div class="flex flex-1 flex-col overflow-hidden">
-      <Topbar
-        client:load
-        username={user?.username ?? null}
-        roles={user?.roles ?? []}
-      />
+      <Topbar client:load username={user?.username ?? null} />
       <main class="flex-1 overflow-y-auto p-6">
         <slot />
       </main>
