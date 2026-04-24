@@ -82,7 +82,14 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
                     Added: {new Date(pk.createdAt).toLocaleDateString()}
                   </span>
                 </div>
-                <Button variant="ghost" size="icon" className="text-destructive">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:bg-destructive/10 revoke-passkey-btn"
+                  data-credential-id={pk.id}
+                  title="Remove passkey"
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -223,10 +230,11 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
                     </div>
                   </div>
                 </div>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="text-destructive hover:bg-destructive/10 revoke-token-btn" 
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:bg-destructive/10 revoke-token-btn"
                   data-id={token.id}
                   title="Revoke token"
                 >
@@ -272,7 +280,9 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
     passkeyBtn?.addEventListener("click", async () => {
       passkeyBtn.disabled = true
       try {
-        const optsRes = await fetch("/api/auth/webauthn/generate-registration-options")
+        const optsRes = await fetch("/api/auth/webauthn/generate-registration-options", {
+          credentials: "include",
+        })
         if (!optsRes.ok) throw new Error((await optsRes.json()).error || "Failed to get options")
         const options = await optsRes.json()
 
@@ -281,6 +291,7 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
         const verifyRes = await fetch("/api/auth/webauthn/verify-registration", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify(regResp),
         })
 
@@ -314,6 +325,7 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
         const res = await fetch("/api/auth/access-tokens", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ name, organizationId, repositoryName }),
         })
 
@@ -358,22 +370,67 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
       btn.addEventListener("click", async () => {
         const id = (btn as HTMLButtonElement).dataset.id
         if (!id) return
-        
+
         if (!confirm("Are you sure you want to revoke this token? This action cannot be undone.")) {
           return
         }
 
         try {
-          const res = await fetch(`/api/auth/access-tokens/${id}`, {
+          const res = await fetch(`/api/auth/access-tokens/${encodeURIComponent(id)}`, {
             method: "DELETE",
+            credentials: "include",
           })
 
-          if (!res.ok) throw new Error("Failed to revoke token")
+          if (!res.ok) {
+            let msg = "Failed to revoke token"
+            try {
+              const data = await res.json()
+              if (data && typeof data.error === "string") msg = data.error
+            } catch {
+              /* ignore */
+            }
+            throw new Error(msg)
+          }
 
           toast.success("Token revoked")
           setTimeout(() => window.location.reload(), 1000)
         } catch (err: any) {
           toast.error(err.message || "Failed to revoke token")
+        }
+      })
+    })
+
+    // Remove passkey
+    document.querySelectorAll(".revoke-passkey-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const credentialId = (btn as HTMLButtonElement).dataset.credentialId
+        if (!credentialId) return
+
+        if (!confirm("Remove this passkey? You can register a new one later.")) {
+          return
+        }
+
+        try {
+          const res = await fetch(
+            `/api/auth/webauthn/credentials/${encodeURIComponent(credentialId)}`,
+            { method: "DELETE", credentials: "include" },
+          )
+
+          if (!res.ok) {
+            let msg = "Failed to remove passkey"
+            try {
+              const data = await res.json()
+              if (data && typeof data.error === "string") msg = data.error
+            } catch {
+              /* ignore */
+            }
+            throw new Error(msg)
+          }
+
+          toast.success("Passkey removed")
+          setTimeout(() => window.location.reload(), 1000)
+        } catch (err: any) {
+          toast.error(err.message || "Failed to remove passkey")
         }
       })
     })
@@ -393,6 +450,7 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
         const res = await fetch("/api/auth/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify(data),
         })
 

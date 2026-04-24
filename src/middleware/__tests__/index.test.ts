@@ -109,6 +109,18 @@ describe("middleware", () => {
       expect(next).toHaveBeenCalled()
     })
 
+    it("allows passkey auth options without session", async () => {
+      const { ctx } = makeCtx("/api/auth/webauthn/generate-authentication-options")
+      await (onRequest as Function)(ctx, next)
+      expect(next).toHaveBeenCalled()
+    })
+
+    it("allows passkey verify without session", async () => {
+      const { ctx } = makeCtx("/api/auth/webauthn/verify-authentication")
+      await (onRequest as Function)(ctx, next)
+      expect(next).toHaveBeenCalled()
+    })
+
     it("allows sub-paths of public routes", async () => {
       const { ctx } = makeCtx("/repository/myrepo")
       await (onRequest as Function)(ctx, next)

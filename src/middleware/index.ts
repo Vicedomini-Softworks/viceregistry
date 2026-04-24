@@ -9,6 +9,9 @@ const PUBLIC_ROUTES = [
   "/image",
   "/api/auth/login",
   "/api/auth/token",
+  // Passkey sign-in (no session yet; must not require auth)
+  "/api/auth/webauthn/generate-authentication-options",
+  "/api/auth/webauthn/verify-authentication",
   "/api/health",
   "/api/search",
 ]
