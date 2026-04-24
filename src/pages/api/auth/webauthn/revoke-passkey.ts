@@ -4,12 +4,20 @@ import { webauthnCredentials } from "@/lib/schema"
 import { writeAuditLog } from "@/lib/audit"
 import { and, eq } from "drizzle-orm"
 
-export const DELETE: APIRoute = async ({ params, locals }) => {
+/** POST (not DELETE) so reverse proxies that block DELETE, and WAFs that flag "/credentials" paths, still work. */
+export const POST: APIRoute = async ({ request, locals }) => {
   const userId = locals.user?.sub
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
-  const { id } = params
-  if (!id) return Response.json({ error: "Missing id" }, { status: 400 })
+  let body: { credentialId?: string }
+  try {
+    body = await request.json()
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 })
+  }
+
+  const id = body.credentialId
+  if (!id) return Response.json({ error: "Missing credentialId" }, { status: 400 })
 
   const result = await db
     .delete(webauthnCredentials)

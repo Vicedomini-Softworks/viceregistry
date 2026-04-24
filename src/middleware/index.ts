@@ -43,7 +43,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   // DELETE /api/registry/* requires admin
   if (pathname.startsWith("/api/registry/") && context.request.method === "DELETE") {
-    if (!context.locals.user?.roles.includes("admin")) {
+    if (!context.locals.user?.roles?.includes("admin")) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: context.locals.user ? 403 : 401,
         headers: { "Content-Type": "application/json" },
@@ -65,7 +65,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   // Admin guard
   if (ADMIN_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
-    if (!context.locals.user.roles.includes("admin")) {
+    if (!context.locals.user.roles?.includes("admin")) {
       if (pathname.startsWith("/api/")) {
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,

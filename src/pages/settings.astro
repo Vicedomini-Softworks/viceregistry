@@ -376,9 +376,11 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
         }
 
         try {
-          const res = await fetch(`/api/auth/access-tokens/${encodeURIComponent(id)}`, {
-            method: "DELETE",
+          const res = await fetch("/api/auth/revoke-access-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             credentials: "include",
+            body: JSON.stringify({ tokenId: id }),
           })
 
           if (!res.ok) {
@@ -411,10 +413,13 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
         }
 
         try {
-          const res = await fetch(
-            `/api/auth/webauthn/credentials/${encodeURIComponent(credentialId)}`,
-            { method: "DELETE", credentials: "include" },
-          )
+          // POST: some hosts return 403 on DELETE to /.../credentials/... (method or path rules)
+          const res = await fetch("/api/auth/webauthn/revoke-passkey", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ credentialId }),
+          })
 
           if (!res.ok) {
             let msg = "Failed to remove passkey"

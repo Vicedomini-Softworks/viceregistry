@@ -261,6 +261,26 @@ describe("middleware", () => {
       expect(next).toHaveBeenCalled()
     })
 
+    it("calls next() for authenticated user on POST /api/auth/webauthn/revoke-passkey (not admin)", async () => {
+      const { ctx } = makeCtx("/api/auth/webauthn/revoke-passkey", {
+        method: "POST",
+        sessionToken: "tok",
+        user: { roles: ["viewer"] },
+      })
+      await (onRequest as Function)(ctx, next)
+      expect(next).toHaveBeenCalled()
+    })
+
+    it("calls next() for authenticated user on POST /api/auth/revoke-access-token (not admin)", async () => {
+      const { ctx } = makeCtx("/api/auth/revoke-access-token", {
+        method: "POST",
+        sessionToken: "tok",
+        user: { roles: ["viewer"] },
+      })
+      await (onRequest as Function)(ctx, next)
+      expect(next).toHaveBeenCalled()
+    })
+
     it("does not treat prefix matches without slash as auth-required", async () => {
       const { ctx } = makeCtx("/settings-fake")
       await (onRequest as Function)(ctx, next)

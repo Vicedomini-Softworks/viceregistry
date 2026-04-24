@@ -1,14 +1,22 @@
 import type { APIRoute } from "astro"
 import { db } from "@/lib/db"
 import { accessTokens } from "@/lib/schema"
-import { eq, and } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 
-export const DELETE: APIRoute = async ({ params, locals }) => {
+/** POST (not DELETE) so reverse proxies that block DELETE still work. */
+export const POST: APIRoute = async ({ request, locals }) => {
   const userId = locals.user?.sub
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
-  const { id } = params
-  if (!id) return Response.json({ error: "Missing id" }, { status: 400 })
+  let body: { tokenId?: string }
+  try {
+    body = await request.json()
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 })
+  }
+
+  const id = body.tokenId
+  if (!id) return Response.json({ error: "Missing tokenId" }, { status: 400 })
 
   const result = await db
     .delete(accessTokens)
