@@ -18,6 +18,7 @@ const user = Astro.locals.user
     <Sidebar
       client:load
       roles={user?.roles ?? []}
+      isSignedIn={!!user}
       currentPath={Astro.url.pathname}
     />
     <div class="flex flex-1 flex-col overflow-hidden">

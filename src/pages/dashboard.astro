@@ -5,13 +5,17 @@ import RepositoryList from "@/components/registry/RepositoryList"
 import { db } from "@/lib/db"
 import { repositories } from "@/lib/schema"
 import { syncRepositories } from "@/lib/registry-sync"
+import { filterByRepositoryAccess, type BrowseUser } from "@/lib/repository-access"
 import { asc } from "drizzle-orm"
 
 // Sync repository list from registry in the background (non-blocking)
 // Fire-and-forget — the page renders with what's already in PG
 syncRepositories().catch((e) => console.error("Registry sync failed:", e))
 
-const allRepos = await db
+const u = Astro.locals.user
+const browseUser: BrowseUser = u ? { sub: u.sub, roles: u.roles } : null
+
+const allRows = await db
   .select({
     name: repositories.name,
     tagCount: repositories.tagCount,
@@ -20,6 +24,8 @@ const allRepos = await db
   })
   .from(repositories)
   .orderBy(asc(repositories.name))
+
+const allRepos = await filterByRepositoryAccess(allRows, browseUser)
 
 const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
 const isAdmin = Astro.locals.user?.roles.includes("admin") ?? false

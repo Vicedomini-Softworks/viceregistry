@@ -1,0 +1,1 @@
+ALTER TABLE "repositories" ADD COLUMN "visibility" text DEFAULT 'public' NOT NULL;

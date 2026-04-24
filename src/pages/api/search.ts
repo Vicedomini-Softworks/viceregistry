@@ -1,9 +1,17 @@
 import type { APIRoute } from "astro"
 import { db } from "@/lib/db"
 import { repositories, imageMetadata } from "@/lib/schema"
-import { ilike, or, sql } from "drizzle-orm"
+import {
+  filterByRepositoryAccess,
+  filterImageRowsByAccess,
+  type BrowseUser,
+} from "@/lib/repository-access"
+import { ilike, or } from "drizzle-orm"
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, locals }) => {
+  const u = locals.user
+  const browseUser: BrowseUser = u ? { sub: u.sub, roles: u.roles } : null
+
   const q = url.searchParams.get("q")?.trim() ?? ""
 
   if (!q) {
@@ -12,7 +20,7 @@ export const GET: APIRoute = async ({ url }) => {
       .from(repositories)
       .orderBy(repositories.name)
       .limit(200)
-    return Response.json({ repositories: allRepos, images: [] })
+    return Response.json({ repositories: await filterByRepositoryAccess(allRepos, browseUser), images: [] })
   }
 
   const pattern = `%${q}%`
@@ -45,5 +53,8 @@ export const GET: APIRoute = async ({ url }) => {
       .limit(100),
   ])
 
-  return Response.json({ repositories: matchedRepos, images: matchedImages })
+  return Response.json({
+    repositories: await filterByRepositoryAccess(matchedRepos, browseUser),
+    images: await filterImageRowsByAccess(matchedImages, browseUser),
+  })
 }

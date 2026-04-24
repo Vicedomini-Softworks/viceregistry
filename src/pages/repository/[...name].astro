@@ -4,15 +4,23 @@ import AppLayout from "@/layouts/app.astro"
 import TagList from "@/components/registry/TagList"
 import Breadcrumb from "@/components/layout/Breadcrumb"
 import { db } from "@/lib/db"
-import { imageMetadata, userRepositoryPermissions, users } from "@/lib/schema"
+import { imageMetadata, userRepositoryPermissions, users, repositories } from "@/lib/schema"
 import { syncRepository } from "@/lib/registry-sync"
+import { canBrowseRepository, type BrowseUser } from "@/lib/repository-access"
 import { eq, asc, and } from "drizzle-orm"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Shield, Trash2, UserPlus } from "lucide-react"
 
 const name = Astro.params.name ?? ""
 if (!name) return Astro.redirect("/dashboard")
+
+const user = Astro.locals.user
+const browseUser: BrowseUser = user ? { sub: user.sub, roles: user.roles } : null
+if (!(await canBrowseRepository(name, browseUser))) {
+  return Astro.redirect("/dashboard")
+}
 
 // Sync this repo (skips if fresh, runs in background if stale)
 syncRepository(name).catch((e) => console.error("Repo sync failed:", e))
@@ -30,8 +38,14 @@ const tagRows = await db
   .orderBy(asc(imageMetadata.tag))
 
 const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
-const user = Astro.locals.user
 const isGlobalAdmin = user?.roles.includes("admin") ?? false
+
+const [repoRow] = await db
+  .select({ visibility: repositories.visibility })
+  .from(repositories)
+  .where(eq(repositories.name, name))
+  .limit(1)
+const repoVisibility = repoRow?.visibility ?? "public"
 
 // Check for direct admin permission
 const [directAdmin] = user ? await db
@@ -74,6 +88,21 @@ const permissions = canManagePermissions ? await db
         <p class="text-sm text-muted-foreground mt-1">
           {tagRows.length} tag{tagRows.length === 1 ? "" : "s"}
         </p>
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+          <Badge variant={repoVisibility === "public" ? "secondary" : "outline"}>
+            {repoVisibility === "public" ? "Public catalog" : "Private catalog"}
+          </Badge>
+          {canManagePermissions && (
+            <div class="flex gap-2">
+              {repoVisibility !== "public" && (
+                <Button variant="outline" size="sm" id="set-repo-public-btn">Make public</Button>
+              )}
+              {repoVisibility !== "private" && (
+                <Button variant="outline" size="sm" id="set-repo-private-btn">Make private</Button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
 
@@ -101,13 +130,13 @@ const permissions = canManagePermissions ? await db
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
-                  <Shield class="h-4 w-4" />
+                  <Shield className="h-4 w-4" />
                   Granular Permissions
                 </CardTitle>
                 <CardDescription>Manage direct user access to this repository</CardDescription>
               </div>
               <Button size="sm" id="add-permission-btn">
-                <UserPlus class="h-4 w-4 mr-2" />
+                <UserPlus className="h-4 w-4 mr-2" />
                 Add User
               </Button>
             </CardHeader>
@@ -131,7 +160,7 @@ const permissions = canManagePermissions ? await db
                           className="text-destructive h-8 w-8 remove-permission-btn" 
                           data-user-id={p.userId}
                         >
-                          <Trash2 class="h-4 w-4" />
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
@@ -147,6 +176,30 @@ const permissions = canManagePermissions ? await db
 
   <script define:vars={{ repoName: name }}>
     import { toast } from "sonner"
+
+    async function setRepoVisibility(visibility) {
+      const res = await fetch(
+        "/api/repositories/" + encodeURIComponent(repoName) + "/visibility",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visibility }),
+        },
+      )
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error((err && err.error) || "Failed to update visibility")
+      }
+      toast.success(visibility === "public" ? "Repository is public in the catalog" : "Repository is private in the catalog")
+      window.location.reload()
+    }
+
+    document.getElementById("set-repo-public-btn")?.addEventListener("click", () => {
+      setRepoVisibility("public").catch((e) => toast.error(e.message))
+    })
+    document.getElementById("set-repo-private-btn")?.addEventListener("click", () => {
+      setRepoVisibility("private").catch((e) => toast.error(e.message))
+    })
 
     const addBtn = document.getElementById("add-permission-btn")
     addBtn?.addEventListener("click", async () => {
@@ -170,8 +223,8 @@ const permissions = canManagePermissions ? await db
 
         toast.success("Permission added")
         window.location.reload()
-      } catch (err: any) {
-        toast.error(err.message)
+      } catch (err) {
+        toast.error(err && err.message)
       }
     })
 
@@ -189,8 +242,8 @@ const permissions = canManagePermissions ? await db
 
           toast.success("Permission removed")
           window.location.reload()
-        } catch (err: any) {
-          toast.error(err.message)
+        } catch (err) {
+          toast.error(err && err.message)
         }
       })
     })

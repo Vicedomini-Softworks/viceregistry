@@ -5,6 +5,8 @@ import type { LucideIcon } from "lucide-react"
 
 interface Props {
   roles: string[]
+  /** When false, only the dashboard link is shown (avoids sign-in for org/settings) */
+  isSignedIn: boolean
   currentPath: string
 }
 
@@ -42,8 +44,11 @@ function NavLink({ item, currentPath }: { item: NavItem; currentPath: string }) 
   )
 }
 
-export default function Sidebar({ roles, currentPath }: Props) {
+export default function Sidebar({ roles, currentPath, isSignedIn }: Props) {
   const isAdmin = roles.includes("admin")
+  const mainNav = isSignedIn
+    ? workspaceItems
+    : workspaceItems.filter((i) => i.href === "/dashboard")
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r bg-card" aria-label="App navigation">
@@ -56,7 +61,7 @@ export default function Sidebar({ roles, currentPath }: Props) {
         </a>
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Main">
-        {workspaceItems.map((item) => (
+        {mainNav.map((item) => (
           <NavLink key={item.href} item={item} currentPath={currentPath} />
         ))}
 

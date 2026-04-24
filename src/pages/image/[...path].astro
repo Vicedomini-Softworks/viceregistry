@@ -6,6 +6,7 @@ import Breadcrumb from "@/components/layout/Breadcrumb"
 import { db } from "@/lib/db"
 import { imageMetadata } from "@/lib/schema"
 import { getManifest } from "@/lib/registry-client"
+import { canBrowseRepository, type BrowseUser } from "@/lib/repository-access"
 import { and, eq } from "drizzle-orm"
 
 const rawPath = Astro.params.path ?? ""
@@ -14,6 +15,12 @@ if (lastSlash === -1) return Astro.redirect("/dashboard")
 const name = rawPath.slice(0, lastSlash)
 const tag = rawPath.slice(lastSlash + 1)
 if (!name || !tag) return Astro.redirect("/dashboard")
+
+const u = Astro.locals.user
+const browseUser: BrowseUser = u ? { sub: u.sub, roles: u.roles } : null
+if (!(await canBrowseRepository(name, browseUser))) {
+  return Astro.redirect("/dashboard")
+}
 
 const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
 
