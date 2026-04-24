@@ -10,6 +10,7 @@ const {
   mockListRepositories,
   mockListTags,
   mockGetManifest,
+  mockGetJsonBlob,
 } = vi.hoisted(() => {
   const mockOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
   const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflictDoUpdate }))
@@ -21,6 +22,7 @@ const {
   const mockListRepositories = vi.fn().mockResolvedValue([])
   const mockListTags = vi.fn().mockResolvedValue([])
   const mockGetManifest = vi.fn()
+  const mockGetJsonBlob = vi.fn()
   return {
     mockInsert,
     mockValues,
@@ -30,6 +32,7 @@ const {
     mockListRepositories,
     mockListTags,
     mockGetManifest,
+    mockGetJsonBlob,
   }
 })
 
@@ -46,9 +49,20 @@ vi.mock("@/lib/registry-client", () => ({
   listRepositories: mockListRepositories,
   listTags: mockListTags,
   getManifest: mockGetManifest,
+  getJsonBlob: mockGetJsonBlob,
 }))
 
 import { syncRepositories, syncRepository, syncAll } from "@/lib/registry-sync"
+
+function mockManifestHeaders() {
+  return {
+    get: (k: string) => {
+      if (k === "content-type") return "application/vnd.docker.distribution.manifest.v2+json"
+      if (k === "Docker-Content-Digest") return "sha256:manifestlayer"
+      return null
+    },
+  }
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -56,6 +70,12 @@ beforeEach(() => {
   mockLimit.mockResolvedValue([])
   mockListRepositories.mockResolvedValue([])
   mockListTags.mockResolvedValue([])
+  mockGetJsonBlob.mockResolvedValue({
+    os: "linux",
+    architecture: "amd64",
+    created: "2024-01-01T00:00:00.000Z",
+    config: { Labels: {} },
+  })
 })
 
 describe("syncRepositories", () => {
@@ -146,14 +166,24 @@ describe("syncRepository", () => {
   it("upserts imageMetadata rows for ok manifests with layers", async () => {
     mockLimit.mockResolvedValue([])
     mockListTags.mockResolvedValue(["latest"])
+    mockGetJsonBlob.mockResolvedValue({
+      os: "linux",
+      architecture: "amd64",
+      created: "2024-01-01T00:00:00.000Z",
+      config: { Labels: { "org.opencontainers.image.description": "d" } },
+    })
     mockGetManifest.mockResolvedValue({
       ok: true,
+      headers: mockManifestHeaders(),
       json: async () => ({
+        schemaVersion: 2,
+        mediaType: "application/vnd.docker.distribution.manifest.v2+json",
         layers: [{ size: 100 }, { size: 200 }],
-        config: { digest: "sha256:abc", os: "linux", architecture: "amd64", created: "2024-01-01T00:00:00Z" },
+        config: { mediaType: "application/vnd.docker.container.image.v1+json", size: 1, digest: "sha256:configblob" },
       }),
     })
     await syncRepository("myrepo")
+    expect(mockGetJsonBlob).toHaveBeenCalled()
     expect(mockInsert).toHaveBeenCalledTimes(2) // imageMetadata + repository
     const metaCall = (mockValues as any).mock.calls[0][0] as any
     expect(metaCall[0]).toMatchObject({
@@ -162,6 +192,7 @@ describe("syncRepository", () => {
       totalSize: 300,
       os: "linux",
       architecture: "amd64",
+      labels: { "org.opencontainers.image.description": "d" },
     })
     const repoCall = (mockValues as any).mock.calls[1][0] as any
     expect(repoCall).toMatchObject({ name: "myrepo", tagCount: 1, sizeBytes: 300 })
@@ -188,6 +219,7 @@ describe("syncRepository", () => {
     expect(setStr).toContain("excluded.os")
     expect(setStr).toContain("excluded.architecture")
     expect(setStr).toContain("excluded.created_at")
+    expect(setStr).toContain("excluded.labels")
     expect(setStr).toContain("excluded.last_synced_at")
   })
 
@@ -196,9 +228,11 @@ describe("syncRepository", () => {
     mockListTags.mockResolvedValue(["v1"])
     mockGetManifest.mockResolvedValue({
       ok: true,
+      headers: mockManifestHeaders(),
       json: async () => ({
+        mediaType: "application/vnd.docker.distribution.manifest.v2+json",
         fsLayers: [{ size: 50 }, { size: 75 }],
-        config: { digest: "sha256:xyz" },
+        config: { mediaType: "application/vnd.docker.container.image.v1+json", digest: "sha256:xyz" },
       }),
     })
     await syncRepository("myrepo")
@@ -256,7 +290,9 @@ describe("syncRepository", () => {
     mockListTags.mockResolvedValue(["minimal"])
     mockGetManifest.mockResolvedValue({
       ok: true,
+      headers: mockManifestHeaders(),
       json: async () => ({
+        schemaVersion: 2,
         layers: [],
         config: {},
       }),
@@ -271,13 +307,15 @@ describe("syncRepository", () => {
     mockListTags.mockResolvedValue(["noconfig"])
     mockGetManifest.mockResolvedValue({
       ok: true,
+      headers: mockManifestHeaders(),
       json: async () => ({
+        schemaVersion: 2,
         layers: [],
       }),
     })
     await syncRepository("myrepo")
     const metaCall = (mockValues as any).mock.calls[0][0] as any
-    expect(metaCall[0]).toMatchObject({ os: null, architecture: null, createdAt: null, digest: undefined })
+    expect(metaCall[0]).toMatchObject({ os: null, architecture: null, createdAt: null, digest: "sha256:manifestlayer" })
   })
 
   it("handles manifest with neither layers nor fsLayers", async () => {
@@ -285,6 +323,7 @@ describe("syncRepository", () => {
     mockListTags.mockResolvedValue(["empty"])
     mockGetManifest.mockResolvedValue({
       ok: true,
+      headers: mockManifestHeaders(),
       json: async () => ({
         // no layers, no fsLayers
         config: { digest: "sha256:abc" },
@@ -300,9 +339,11 @@ describe("syncRepository", () => {
     mockListTags.mockResolvedValue(["notag"])
     mockGetManifest.mockResolvedValue({
       ok: true,
+      headers: mockManifestHeaders(),
       json: async () => ({
+        mediaType: "application/vnd.docker.distribution.manifest.v2+json",
         layers: [{}], // no size field
-        config: { digest: "sha256:abc" },
+        config: { mediaType: "application/vnd.docker.container.image.v1+json", digest: "sha256:abc" },
       }),
     })
     await syncRepository("myrepo")
@@ -316,7 +357,12 @@ describe("syncRepository", () => {
     mockListTags.mockResolvedValue(tags)
     mockGetManifest.mockResolvedValue({
       ok: true,
-      json: async () => ({ layers: [], config: { digest: "sha256:abc" } }),
+      headers: mockManifestHeaders(),
+      json: async () => ({
+        mediaType: "application/vnd.docker.distribution.manifest.v2+json",
+        layers: [],
+        config: { digest: "sha256:abc" },
+      }),
     })
     const allSettledSpy = vi.spyOn(Promise, "allSettled")
     await syncRepository("myrepo")

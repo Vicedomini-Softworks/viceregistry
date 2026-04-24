@@ -146,7 +146,7 @@ export default function RepositoryList({ repositories, registryHost }: Props) {
                 <TableRow
                   key={repo.name}
                   className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => (window.location.href = `/repository/${repo.name}`)}
+                  onClick={() => (window.location.href = `/r/${encodeURI(repo.name)}`)}
                 >
                   <TableCell className="flex items-center gap-2 font-medium">
                     <Package className="h-4 w-4 shrink-0 text-muted-foreground" />

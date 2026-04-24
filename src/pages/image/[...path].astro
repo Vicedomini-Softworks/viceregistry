@@ -58,7 +58,7 @@ const layers = (
       client:load
       items={[
         { label: "Repositories", href: "/dashboard" },
-        { label: name, href: `/repository/${name}` },
+        { label: name, href: `/r/${name}` },
         { label: tag },
       ]}
     />
@@ -78,6 +78,7 @@ const layers = (
       os={pgMeta?.os ?? undefined}
       architecture={pgMeta?.architecture ?? undefined}
       createdAt={pgMeta?.createdAt?.toISOString() ?? undefined}
+      labelDescription={pgMeta?.labels?.["org.opencontainers.image.description"] ?? undefined}
     />
   </div>
 </AppLayout>

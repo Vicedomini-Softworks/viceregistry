@@ -20,6 +20,8 @@ interface Props {
   createdAt?: string
   os?: string
   architecture?: string
+  /** From OCI label org.opencontainers.image.description */
+  labelDescription?: string
 }
 
 function formatBytes(bytes: number): string {
@@ -38,6 +40,7 @@ export default function ImageDetail({
   createdAt,
   os,
   architecture,
+  labelDescription,
 }: Props) {
   const totalSize = layers.reduce((acc, l) => acc + l.size, 0)
 
@@ -46,10 +49,16 @@ export default function ImageDetail({
       <div className="flex flex-wrap gap-2">
         {os && <Badge variant="secondary">{os}</Badge>}
         {architecture && <Badge variant="secondary">{architecture}</Badge>}
-        <Badge variant="outline" className="font-mono text-xs">
-          {digest.slice(0, 19)}…
-        </Badge>
+        {digest ? (
+          <Badge variant="outline" className="font-mono text-xs">
+            {digest.slice(0, 19)}…
+          </Badge>
+        ) : null}
       </div>
+
+      {labelDescription ? (
+        <p className="text-sm text-muted-foreground max-w-2xl leading-relaxed">{labelDescription}</p>
+      ) : null}
 
       <Card>
         <CardHeader>

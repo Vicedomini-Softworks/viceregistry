@@ -6,6 +6,7 @@ const PUBLIC_ROUTES = [
   "/login",
   "/dashboard",
   "/repository",
+  "/r",
   "/image",
   "/api/auth/login",
   "/api/auth/token",

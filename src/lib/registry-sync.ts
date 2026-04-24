@@ -1,6 +1,7 @@
 import { db } from "./db"
 import { repositories, imageMetadata } from "./schema"
-import { listRepositories, listTags, getManifest } from "./registry-client"
+import { listRepositories, listTags, getManifest, getJsonBlob } from "./registry-client"
+import { parseConfigBlob, resolveToImageManifest } from "./registry-manifest"
 import { eq, sql } from "drizzle-orm"
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
@@ -27,6 +28,7 @@ export async function syncRepositories(): Promise<void> {
 /**
  * Sync tags + manifests for a single repository → PG.
  * Only syncs if the repo entry is stale or missing.
+ * Resolves OCI / Docker v2 manifest lists, fetches config blobs for labels and os/arch/created.
  */
 export async function syncRepository(name: string): Promise<void> {
   const [existing] = await db
@@ -53,33 +55,69 @@ export async function syncRepository(name: string): Promise<void> {
       batch.map(async (tag) => {
         const res = await getManifest(name, tag)
         if (!res.ok) return null
-        const manifest: Record<string, unknown> = await res.json()
-        return { tag, manifest }
+        const contentDigest = res.headers.get("Docker-Content-Digest")
+        const mediaType = res.headers.get("content-type")?.split(";")[0]?.trim() ?? ""
+        const manifest = (await res.json()) as Record<string, unknown>
+
+        const resolved = await resolveToImageManifest(name, manifest, mediaType)
+        if (resolved) {
+          const { layers, configDigest } = resolved
+          const size = layers.reduce((a, l) => a + l.size, 0)
+          let os: string | null = null
+          let arch: string | null = null
+          let createdAt: Date | null = null
+          let labels: Record<string, string> | null = null
+          if (configDigest) {
+            const blob = await getJsonBlob(name, configDigest)
+            const parsed = parseConfigBlob(blob)
+            os = parsed.os
+            arch = parsed.architecture
+            createdAt = parsed.createdAt
+            labels = parsed.labels
+          }
+          return {
+            tag,
+            totalSize: size,
+            os,
+            architecture: arch,
+            createdAt,
+            labels,
+            digest: contentDigest ?? undefined,
+          }
+        }
+
+        // Fallback: schema1 or unusual manifests — use embedded data only
+        const rawLayers = (manifest.layers ?? manifest.fsLayers ?? []) as Array<Record<string, unknown>>
+        const size = rawLayers.map((l) => Number(l.size ?? 0)).reduce((a, b) => a + b, 0)
+        const mConfig = manifest.config as
+          | { os?: string; architecture?: string; created?: string; digest?: string }
+          | undefined
+        return {
+          tag,
+          totalSize: size,
+          os: mConfig?.os ?? null,
+          architecture: mConfig?.architecture ?? null,
+          createdAt: mConfig?.created ? new Date(mConfig.created) : null,
+          labels: null as Record<string, string> | null,
+          digest: contentDigest ?? mConfig?.digest,
+        }
       }),
     )
 
     for (const result of results) {
       if (result.status === "rejected") continue
       if (!result.value) continue
-      const { tag, manifest } = result.value
-
-      const layers = (
-        (manifest.layers ?? manifest.fsLayers ?? []) as Array<Record<string, unknown>>
-      ).map((l) => Number(l.size ?? 0))
-      const size = layers.reduce((a, b) => a + b, 0)
-      totalSize += size
-
-      const config = manifest.config as Record<string, unknown> | undefined
-      const configData = config as { os?: string; architecture?: string; created?: string } | undefined
-
+      const v = result.value
+      totalSize += v.totalSize
       metaRows.push({
         repository: name,
-        tag,
-        digest: (manifest.config as Record<string, unknown> | undefined)?.digest as string | undefined,
-        totalSize: size,
-        os: configData?.os ?? null,
-        architecture: configData?.architecture ?? null,
-        createdAt: configData?.created ? new Date(configData.created) : null,
+        tag: v.tag,
+        digest: v.digest ?? null,
+        totalSize: v.totalSize,
+        os: v.os,
+        architecture: v.architecture,
+        createdAt: v.createdAt,
+        labels: v.labels,
         lastSyncedAt: new Date(),
       })
     }
@@ -98,6 +136,7 @@ export async function syncRepository(name: string): Promise<void> {
           os: sql`excluded.os`,
           architecture: sql`excluded.architecture`,
           createdAt: sql`excluded.created_at`,
+          labels: sql`excluded.labels`,
           lastSyncedAt: sql`excluded.last_synced_at`,
         },
       })

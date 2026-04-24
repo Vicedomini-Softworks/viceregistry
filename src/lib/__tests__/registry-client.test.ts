@@ -4,6 +4,7 @@ import {
   listTags,
   getManifest,
   getManifestDigest,
+  getJsonBlob,
   deleteManifest,
   proxyRegistryRequest,
 } from "@/lib/registry-client"
@@ -134,6 +135,35 @@ describe("registry-client", () => {
       const [url, opts] = fetchMock.mock.calls[0]
       expect(url).toBe("http://registry:5000/v2/myrepo/manifests/sha256:deadbeef")
       expect(opts.method).toBe("DELETE")
+    })
+  })
+
+  describe("getJsonBlob", () => {
+    it("returns parsed JSON for small ok response", async () => {
+      const body = { os: "linux", config: { Labels: { "org.opencontainers.image.title": "T" } } }
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: (k: string) => (k === "content-length" ? "100" : null) },
+          arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(body)).buffer,
+        }),
+      )
+      const out = await getJsonBlob("ns/r", "sha256:abc")
+      expect(out).toEqual(body)
+    })
+
+    it("returns null when content-length exceeds cap", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: (k: string) => (k === "content-length" ? "99999999" : null) },
+          arrayBuffer: async () => new ArrayBuffer(0),
+        }),
+      )
+      const out = await getJsonBlob("ns/r", "sha256:abc", 1000)
+      expect(out).toBeNull()
     })
   })
 

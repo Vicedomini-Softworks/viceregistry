@@ -1,0 +1,60 @@
+---
+export const prerender = false
+import AppLayout from "@/layouts/app.astro"
+import Breadcrumb from "@/components/layout/Breadcrumb"
+import RepositoryHubView from "@/components/registry/RepositoryHubView"
+import { canBrowseRepository, type BrowseUser } from "@/lib/repository-access"
+import { loadRepositoryHubData } from "@/lib/repository-page-data"
+import { syncRepository } from "@/lib/registry-sync"
+
+const name = Astro.params.name ?? ""
+if (!name) return Astro.redirect("/dashboard")
+
+const user = Astro.locals.user
+const browseUser: BrowseUser = user ? { sub: user.sub, roles: user.roles } : null
+if (!(await canBrowseRepository(name, browseUser))) {
+  return Astro.redirect("/dashboard")
+}
+
+syncRepository(name).catch((e) => console.error("Repo sync failed:", e))
+
+const data = await loadRepositoryHubData(
+  name,
+  user ? { sub: user.sub, roles: user.roles } : undefined
+)
+
+const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
+
+const tagListProps = data.tagRows.map((r) => ({
+  tag: r.tag,
+  digest: r.digest ?? null,
+  totalSize: r.totalSize ?? null,
+  os: r.os ?? null,
+  architecture: r.architecture ?? null,
+}))
+---
+
+<AppLayout title={name}>
+  <div class="flex flex-col gap-6">
+    <Breadcrumb
+      client:load
+      items={[
+        { label: "Repositories", href: "/dashboard" },
+        { label: name, href: `/r/${encodeURI(name)}` },
+      ]}
+    />
+    <RepositoryHubView
+      client:load
+      name={name}
+      registryHost={registryHost}
+      repositoryUrlPath={name}
+      overview={data.overview}
+      overviewMarkdown={data.overviewMarkdown}
+      initialTagRows={tagListProps}
+      initialRepoVisibility={(data.repoVisibility === "private" ? "private" : "public") as "public" | "private"}
+      isGlobalAdmin={data.isGlobalAdmin}
+      canManagePermissions={data.canManagePermissions}
+      initialPermissions={data.permissions}
+    />
+  </div>
+</AppLayout>

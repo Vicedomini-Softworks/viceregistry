@@ -8,6 +8,7 @@ import {
   integer,
   bigint,
   uniqueIndex,
+  jsonb,
 } from "drizzle-orm/pg-core"
 
 export const roles = pgTable("roles", {
@@ -46,6 +47,8 @@ export const repositories = pgTable("repositories", {
   sizeBytes: bigint("size_bytes", { mode: "number" }),
   /** public = listed for anonymous users; private = only users with registry pull (RBAC) */
   visibility: text("visibility").notNull().default("public"),
+  /** Optional Hub-style README; overrides OCI label–based overview when set */
+  overviewMarkdown: text("overview_markdown"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -60,6 +63,8 @@ export const imageMetadata = pgTable(
     os: text("os"),
     architecture: text("architecture"),
     createdAt: timestamp("created_at", { withTimezone: true }),
+    /** OCI/config labels (e.g. org.opencontainers.image.*) from config blob */
+    labels: jsonb("labels").$type<Record<string, string> | null>(),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("image_metadata_repo_tag_idx").on(t.repository, t.tag)],

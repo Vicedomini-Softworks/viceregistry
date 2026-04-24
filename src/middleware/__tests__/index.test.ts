@@ -127,6 +127,12 @@ describe("middleware", () => {
       expect(next).toHaveBeenCalled()
     })
 
+    it("allows /r/ namespace-style repo paths without auth", async () => {
+      const { ctx } = makeCtx("/r/owner/app")
+      await (onRequest as Function)(ctx, next)
+      expect(next).toHaveBeenCalled()
+    })
+
     it("does not treat prefix matches without slash as public", async () => {
       const { ctx } = makeCtx("/login-fake")
       await (onRequest as Function)(ctx, next)

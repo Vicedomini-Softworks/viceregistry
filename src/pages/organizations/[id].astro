@@ -136,7 +136,7 @@ const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
             <div class="flex flex-col divide-y">
               {repos.map((repo) => (
                 <div class="flex items-center justify-between py-3">
-                  <a href={`/repository/${repo.repositoryName}`} class="text-sm font-medium hover:underline">
+                  <a href={`/r/${encodeURI(repo.repositoryName)}`} class="text-sm font-medium hover:underline">
                     {repo.repositoryName}
                   </a>
                   {isAdmin && (
@@ -200,8 +200,8 @@ const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
 
         toast.success("Member added")
         window.location.reload()
-      } catch (err: any) {
-        toast.error(err.message)
+      } catch (err) {
+        toast.error(err && err.message)
       }
     })
 
@@ -219,8 +219,8 @@ const registryHost = process.env.REGISTRY_PUBLIC_HOST ?? "localhost:5000"
 
           toast.success("Member removed")
           window.location.reload()
-        } catch (err: any) {
-          toast.error(err.message)
+        } catch (err) {
+          toast.error(err && err.message)
         }
       })
     })

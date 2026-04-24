@@ -50,6 +50,13 @@
       "when": 1776992035773,
       "tag": "0006_repository_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776992937561,
+      "tag": "0007_hub_overview_labels",
+      "breakpoints": true
     }
   ]
 }
