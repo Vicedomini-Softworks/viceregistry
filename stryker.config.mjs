@@ -14,6 +14,6 @@ export default {
     "src/middleware/index.ts",
   ],
   coverageAnalysis: "perTest",
-  thresholds: { high: 98, low: 90, break: 98 },
+  thresholds: { high: 100, low: 100, break: 100 },
   reporters: ["progress", "clear-text", "json"],
 }

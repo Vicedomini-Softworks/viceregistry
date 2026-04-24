@@ -20,9 +20,6 @@ const PUBLIC_ROUTES = [
 // Admin only
 const ADMIN_PREFIXES = ["/admin", "/api/users"]
 
-// Auth required (but not admin)
-const AUTH_PREFIXES = ["/settings", "/api/auth/logout", "/api/auth/me"]
-
 export const onRequest = defineMiddleware(async (context, next) => {
   const { pathname } = context.url
 

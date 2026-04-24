@@ -6,7 +6,6 @@ import {
   updateSettingsSchema,
   createOrganizationSchema,
   deriveSlug,
-  SLUG_ERROR,
 } from "@/lib/validations"
 
 describe("loginSchema", () => {
@@ -44,6 +43,10 @@ describe("createUserSchema", () => {
   it("rejects username with invalid chars", () => {
     expect(createUserSchema.safeParse({ ...valid, username: "alice!" }).success).toBe(false)
     expect(createUserSchema.safeParse({ ...valid, username: "ALICE" }).success).toBe(false)
+  })
+
+  it("rejects username with invalid prefix (regex must be anchored)", () => {
+    expect(createUserSchema.safeParse({ ...valid, username: "!!alice" }).success).toBe(false)
   })
 
   it("rejects username too short", () => {
@@ -184,7 +187,9 @@ describe("createOrganizationSchema", () => {
     const result = createOrganizationSchema.safeParse({ ...valid, slug: "-bad" })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error.issues[0].message).toBe(SLUG_ERROR)
+      expect(result.error.issues[0].message).toBe(
+        "Slug must be 3–39 lowercase alphanumeric characters or hyphens, cannot start or end with a hyphen",
+      )
     }
   })
 })

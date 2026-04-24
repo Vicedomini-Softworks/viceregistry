@@ -1,11 +1,19 @@
-const MANIFEST_ACCEPT =
+export const MANIFEST_ACCEPT =
   "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json"
 
-const BLOB_ACCEPT =
+export const BLOB_ACCEPT =
   "application/vnd.oci.image.config.v1+json, application/vnd.docker.container.image.v1+json, application/json"
 
 /** Max config blob size to avoid runaway memory during sync (2 MiB). */
 export const CONFIG_BLOB_MAX_BYTES = 2 * 1024 * 1024
+
+/** Interprets Content-Length header; NaN if missing, empty, or not an integer. */
+export function parseContentLengthHeader(value: string | null | undefined): number {
+  if (typeof value !== "string") return Number.NaN
+  // Stryker disable next-line ConditionalExpression: if(false) is equivalent to parseInt("",10) for empty string
+  if (value.length === 0) return Number.NaN
+  return parseInt(value, 10)
+}
 
 async function registryFetch(path: string, options?: RequestInit) {
   const url = `${process.env.REGISTRY_URL ?? "http://localhost:5000"}/v2${path}`
@@ -50,11 +58,8 @@ export async function getJsonBlob(
     headers: { Accept: BLOB_ACCEPT },
   })
   if (!res.ok) return null
-  const cl = res.headers.get("content-length")
-  if (cl) {
-    const n = parseInt(cl, 10)
-    if (!Number.isNaN(n) && n > maxBytes) return null
-  }
+  const parsedLength = parseContentLengthHeader(res.headers.get("content-length"))
+  if (!Number.isNaN(parsedLength) && parsedLength > maxBytes) return null
   const buf = await res.arrayBuffer()
   if (buf.byteLength > maxBytes) return null
   const text = new TextDecoder().decode(buf)

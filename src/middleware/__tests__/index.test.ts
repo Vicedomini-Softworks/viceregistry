@@ -47,7 +47,7 @@ function makeCtx(
     redirect: vi.fn((url: string) => new Response(null, { status: 302, headers: { Location: url } })),
   }
 
-  return { ctx, cookieDelete }
+  return { ctx, cookieDelete, cookieGet }
 }
 
 const next = vi.fn().mockResolvedValue(new Response("ok"))
@@ -63,6 +63,7 @@ describe("middleware", () => {
       const { ctx } = makeCtx("/login")
       await (onRequest as Function)(ctx, next)
       expect(next).toHaveBeenCalled()
+      expect(mockVerifySessionToken).not.toHaveBeenCalled()
     })
 
     it("calls next() with no session on /login (empty cookie)", async () => {
@@ -72,13 +73,14 @@ describe("middleware", () => {
     })
 
     it("attaches user from valid session on public route /dashboard", async () => {
-      const { ctx } = makeCtx("/dashboard", {
+      const { ctx, cookieGet } = makeCtx("/dashboard", {
         sessionToken: "valid.tok.en",
         user: { roles: ["viewer"] },
       })
       await (onRequest as Function)(ctx, next)
       expect(ctx.locals.user).toBeDefined()
       expect(next).toHaveBeenCalled()
+      expect(cookieGet).toHaveBeenCalledWith("session")
     })
 
     it("clears cookie on invalid session token on public route", async () => {
@@ -168,6 +170,16 @@ describe("middleware", () => {
       expect(res.headers.get("Content-Type")).toBe("application/json")
     })
 
+    it("returns 403 for DELETE /api/registry when user has no roles (optional chaining on roles)", async () => {
+      const { ctx } = makeCtx("/api/registry/myrepo/manifests/x", {
+        method: "DELETE",
+        sessionToken: "tok",
+        user: { sub: "u1" } as { sub: string; roles?: string[] },
+      })
+      const res = await (onRequest as Function)(ctx, next)
+      expect(res.status).toBe(403)
+    })
+
     it("returns 403 when non-admin user", async () => {
       const { ctx } = makeCtx("/api/registry/myrepo/manifests/sha256:abc", {
         method: "DELETE",
@@ -195,6 +207,8 @@ describe("middleware", () => {
       const { ctx } = makeCtx("/api/registry/myrepo/manifests/sha256:abc", { method: "GET" })
       const res = await (onRequest as Function)(ctx, next)
       expect(res.status).toBe(401) // hits unauthenticated API request block
+      const body = await res.json()
+      expect(body.error).toBe("Unauthorized")
     })
   })
 
@@ -209,6 +223,17 @@ describe("middleware", () => {
       const body = await res.json()
       expect(body.error).toBe("Forbidden")
       expect(res.headers.get("Content-Type")).toBe("application/json")
+    })
+
+    it("returns 403 JSON for user without roles on /api/users (no throw from roles check)", async () => {
+      const { ctx } = makeCtx("/api/users", {
+        sessionToken: "tok",
+        user: { sub: "u1" } as { sub: string; roles?: string[] },
+      })
+      const res = await (onRequest as Function)(ctx, next)
+      expect(res.status).toBe(403)
+      const body = await res.json()
+      expect(body.error).toBe("Forbidden")
     })
 
     it("redirects non-admin to /dashboard for /admin page", async () => {
@@ -249,6 +274,16 @@ describe("middleware", () => {
   })
 
   describe("auth-required non-admin routes", () => {
+    it("DELETE /settings with session does not use registry delete admin block", async () => {
+      const { ctx } = makeCtx("/settings", {
+        method: "DELETE",
+        sessionToken: "tok",
+        user: { roles: ["viewer"] },
+      })
+      await (onRequest as Function)(ctx, next)
+      expect(next).toHaveBeenCalled()
+    })
+
     it("calls next() for authenticated user on /settings", async () => {
       const { ctx } = makeCtx("/settings", {
         sessionToken: "tok",

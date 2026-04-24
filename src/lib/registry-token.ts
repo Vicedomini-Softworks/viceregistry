@@ -14,9 +14,15 @@ export interface TokenConstraints {
   repositoryName?: string | null
 }
 
+/** Splits a ":" scope action list and omits empty segments. Exported for unit tests. */
+export function splitCommaScopeActions(actionsStr: string): string[] {
+  return actionsStr.split(",").filter((a) => a.length > 0)
+}
+
 export async function issueRegistryToken(claims: TokenClaims): Promise<string> {
   const rawKey = process.env.REGISTRY_TOKEN_PRIVATE_KEY
   if (!rawKey) throw new Error("REGISTRY_TOKEN_PRIVATE_KEY env var is required")
+  // Stryker disable next-line StringLiteral: PEM line breaks are real newlines (0x0a), not empty
   const privateKeyPem = rawKey.replace(/\\n/g, "\n")
   const privateKey = await importPKCS8(privateKeyPem, "RS256")
 
@@ -35,7 +41,7 @@ function parseScopeToAccess(scope: string) {
   const parts = scope.split(":")
   if (parts.length < 3) return []
   const [type, name, actionsStr] = parts
-  const actions = actionsStr.split(",").filter(Boolean)
+  const actions = splitCommaScopeActions(actionsStr)
   return [{ type, name, actions }]
 }
 
@@ -55,7 +61,7 @@ export async function computeGrantedScope(
   const parts = requestedScope.split(":")
   if (parts.length < 3) return ""
   const [type, name, actionsStr] = parts
-  const requestedActions = actionsStr.split(",").filter(Boolean)
+  const requestedActions = splitCommaScopeActions(actionsStr)
 
   // 1. Check Token Constraints first
   if (constraints) {
@@ -100,6 +106,17 @@ export async function computeGrantedScope(
           if (constraints?.organizationId && constraints.organizationId !== orgId) return ""
 
           // Org role is authoritative — overwrite all global role flags
+          if (
+            oRole !== "owner" &&
+            oRole !== "admin" &&
+            oRole !== "developer" &&
+            oRole !== "push" &&
+            oRole !== "member" &&
+            oRole !== "viewer" &&
+            oRole !== "pull"
+          ) {
+            return ""
+          }
           if (oRole === "owner" || oRole === "admin") {
             isAdmin = true
             canPush = true
@@ -108,12 +125,10 @@ export async function computeGrantedScope(
             isAdmin = false
             canPush = true
             canPull = true
-          } else if (oRole === "member" || oRole === "viewer" || oRole === "pull") {
+          } else {
             isAdmin = false
             canPush = false
             canPull = true
-          } else {
-            return ""
           }
         }
         // else: user's own namespace — global role flags already correct

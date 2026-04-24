@@ -5,8 +5,11 @@ import {
   getManifest,
   getManifestDigest,
   getJsonBlob,
+  CONFIG_BLOB_MAX_BYTES,
   deleteManifest,
   proxyRegistryRequest,
+  MANIFEST_ACCEPT,
+  parseContentLengthHeader,
 } from "@/lib/registry-client"
 
 function mockFetch(ok: boolean, body: unknown, headers: Record<string, string> = {}) {
@@ -23,9 +26,58 @@ function mockFetch(ok: boolean, body: unknown, headers: Record<string, string> =
   })
 }
 
+describe("parseContentLengthHeader", () => {
+  it("returns NaN for null or undefined", () => {
+    expect(Number.isNaN(parseContentLengthHeader(null))).toBe(true)
+    expect(Number.isNaN(parseContentLengthHeader(undefined))).toBe(true)
+  })
+
+  it("returns NaN for empty string", () => {
+    expect(Number.isNaN(parseContentLengthHeader(""))).toBe(true)
+  })
+
+  it("returns parsed int for a numeric string", () => {
+    expect(parseContentLengthHeader("1024")).toBe(1024)
+  })
+
+  it("returns NaN for a non-numeric value", () => {
+    expect(Number.isNaN(parseContentLengthHeader("x"))).toBe(true)
+  })
+})
+
 describe("registry-client", () => {
   beforeEach(() => {
     vi.unstubAllEnvs()
+    vi.stubEnv("REGISTRY_URL", "http://registry:5000")
+  })
+
+  describe("default REGISTRY_URL", () => {
+    it("uses localhost for getJsonBlob when REGISTRY_URL is unset", async () => {
+      vi.unstubAllEnvs()
+      delete process.env.REGISTRY_URL
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => new TextEncoder().encode("{}").buffer,
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      await getJsonBlob("n/s", "sha256:ab")
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:5000/v2/n/s/blobs/sha256:ab",
+        expect.objectContaining({ headers: expect.anything() }),
+      )
+      vi.stubEnv("REGISTRY_URL", "http://registry:5000")
+    })
+
+    it("uses localhost for listTags when REGISTRY_URL is unset", async () => {
+      vi.unstubAllEnvs()
+      delete process.env.REGISTRY_URL
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tags: [] }) })
+      vi.stubGlobal("fetch", fetchMock)
+      await listTags("repo")
+      expect(fetchMock).toHaveBeenCalledWith("http://localhost:5000/v2/repo/tags/list", expect.anything())
+      vi.stubEnv("REGISTRY_URL", "http://registry:5000")
+    })
   })
 
   describe("listRepositories", () => {
@@ -51,8 +103,9 @@ describe("registry-client", () => {
       const fetchMock = mockFetch(true, { repositories: [] })
       vi.stubGlobal("fetch", fetchMock)
       await listRepositories()
-      const [url] = fetchMock.mock.calls[0]
+      const [url, opts] = fetchMock.mock.calls[0]
       expect(url).toBe("http://registry:5000/v2/_catalog?n=1000")
+      expect((opts as RequestInit).headers).toMatchObject({ Accept: MANIFEST_ACCEPT })
     })
   })
 
@@ -139,6 +192,59 @@ describe("registry-client", () => {
   })
 
   describe("getJsonBlob", () => {
+    const BLOB_LITERAL =
+      "application/vnd.oci.image.config.v1+json, application/vnd.docker.container.image.v1+json, application/json"
+
+    it("sends BLOB Accept header and fetches config blob URL", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => new TextEncoder().encode("{}").buffer,
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      await getJsonBlob("ns/r", "sha256:abc")
+      const [, init] = fetchMock.mock.calls[0]
+      expect((init as RequestInit).headers).toEqual({ Accept: BLOB_LITERAL })
+    })
+
+    it("reads content-length with header name content-length (not an empty string)", async () => {
+      const h = vi.fn((k: string) => (k === "content-length" ? "2" : null))
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: h },
+        arrayBuffer: async () => new TextEncoder().encode('{}').buffer,
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      await getJsonBlob("ns/r", "sha256:abc", 1_000_000)
+      expect(h).toHaveBeenCalledWith("content-length")
+    })
+
+    it("does not drop JSON when content-length equals maxBytes (n > maxBytes is strict)", async () => {
+      const json = '{"a":1}'
+      const maxB = new TextEncoder().encode(json).byteLength
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: (k: string) => (k === "content-length" ? String(maxB) : null) },
+          arrayBuffer: async () => new TextEncoder().encode(json).buffer,
+        }),
+      )
+      expect(await getJsonBlob("ns/r", "sha256:abc", maxB)).toEqual({ a: 1 })
+    })
+
+    it("returns null when content-length (parsed) is over maxBytes, without reading a smaller body (header wins)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: (k: string) => (k === "content-length" ? "999999" : null) },
+          arrayBuffer: async () => new TextEncoder().encode("{}").buffer,
+        }),
+      )
+      expect(await getJsonBlob("ns/r", "sha256:abc", 1_000)).toBeNull()
+    })
+
     it("returns parsed JSON for small ok response", async () => {
       const body = { os: "linux", config: { Labels: { "org.opencontainers.image.title": "T" } } }
       vi.stubGlobal(
@@ -164,6 +270,92 @@ describe("registry-client", () => {
       )
       const out = await getJsonBlob("ns/r", "sha256:abc", 1000)
       expect(out).toBeNull()
+    })
+
+    it("rejects oversize from header even when the body bytes are small", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: (k: string) => (k === "content-length" ? "500" : null) },
+          arrayBuffer: async () => new TextEncoder().encode("{}").buffer,
+        }),
+      )
+      expect(await getJsonBlob("ns/r", "sha256:abc", 100)).toBeNull()
+    })
+
+    it("returns null when response is not ok (even if body is valid JSON)", async () => {
+      const goodJson = new TextEncoder().encode('{"a":1}').buffer
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          headers: { get: () => null },
+          arrayBuffer: async () => goodJson,
+        }),
+      )
+      expect(await getJsonBlob("ns/r", "sha256:abc")).toBeNull()
+    })
+
+    it("returns null when body is not valid JSON", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: () => null },
+          arrayBuffer: async () => new TextEncoder().encode("not valid json{").buffer,
+        }),
+      )
+      expect(await getJsonBlob("ns/r", "sha256:abc")).toBeNull()
+    })
+
+    it("returns null when no content-length but body is larger than maxBytes", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: () => null },
+          arrayBuffer: async () => new ArrayBuffer(5000),
+        }),
+      )
+      expect(await getJsonBlob("ns/r", "sha256:abc", 1000)).toBeNull()
+    })
+
+    it("ignores empty content-length string and enforces size on the body", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: (k: string) => (k === "content-length" ? "" : null) },
+          arrayBuffer: async () => new TextEncoder().encode("{}").buffer,
+        }),
+      )
+      expect(await getJsonBlob("ns/r", "sha256:abc", 1)).toBeNull()
+    })
+
+    it("does not short-circuit when content-length is not a number (reads body, then enforces size)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: (k: string) => (k === "content-length" ? "NaN" : null) },
+          arrayBuffer: async () => new TextEncoder().encode("{}").buffer,
+        }),
+      )
+      expect(await getJsonBlob("ns/r", "sha256:abc", 10)).toEqual({})
+    })
+
+    it("parses JSON when content-length header is not set", async () => {
+      const body = { x: 1 }
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: { get: () => null },
+          arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(body)).buffer,
+        }),
+      )
+      expect(await getJsonBlob("ns/r", "sha256:abc", CONFIG_BLOB_MAX_BYTES)).toEqual(body)
     })
   })
 

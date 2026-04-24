@@ -6,6 +6,13 @@ import { eq, sql } from "drizzle-orm"
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
+/** First segment of Content-Type (strips parameters such as charset). */
+export function contentTypeMediaTypeFromGet(get: (name: string) => string | null): string {
+  const raw = get("content-type")
+  if (raw == null) return ""
+  return raw.split(";")[0]!.trim()
+}
+
 function isStale(date: Date | null | undefined): boolean {
   if (!date) return true
   return Date.now() - date.getTime() >= STALE_THRESHOLD_MS
@@ -56,7 +63,7 @@ export async function syncRepository(name: string): Promise<void> {
         const res = await getManifest(name, tag)
         if (!res.ok) return null
         const contentDigest = res.headers.get("Docker-Content-Digest")
-        const mediaType = res.headers.get("content-type")?.split(";")[0]?.trim() ?? ""
+        const mediaType = contentTypeMediaTypeFromGet((k) => res.headers.get(k))
         const manifest = (await res.json()) as Record<string, unknown>
 
         const resolved = await resolveToImageManifest(name, manifest, mediaType)
@@ -105,7 +112,6 @@ export async function syncRepository(name: string): Promise<void> {
     )
 
     for (const result of results) {
-      if (result.status === "rejected") continue
       if (!result.value) continue
       const v = result.value
       totalSize += v.totalSize

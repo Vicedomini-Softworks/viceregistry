@@ -52,7 +52,8 @@ vi.mock("@/lib/registry-client", () => ({
   getJsonBlob: mockGetJsonBlob,
 }))
 
-import { syncRepositories, syncRepository, syncAll } from "@/lib/registry-sync"
+import { syncRepositories, syncRepository, syncAll, contentTypeMediaTypeFromGet } from "@/lib/registry-sync"
+import * as registryManifest from "@/lib/registry-manifest"
 
 function mockManifestHeaders() {
   return {
@@ -63,6 +64,31 @@ function mockManifestHeaders() {
     },
   }
 }
+
+describe("contentTypeMediaTypeFromGet", () => {
+  it("returns first semicolon segment and trims, from content-type", () => {
+    expect(
+      contentTypeMediaTypeFromGet((k) =>
+        k === "content-type" ? "application/vnd.docker.distribution.manifest.v2+json; charset=utf-8" : null,
+      ),
+    ).toBe("application/vnd.docker.distribution.manifest.v2+json")
+  })
+
+  it("returns empty string when header is missing", () => {
+    expect(contentTypeMediaTypeFromGet(() => null)).toBe("")
+  })
+
+  it("uses semicolon to split (not an empty pattern)", () => {
+    const get = (name: string) => (name === "content-type" ? "a/b" : null)
+    expect(contentTypeMediaTypeFromGet(get)).toBe("a/b")
+  })
+
+  it("trims leading and trailing space in the first content-type segment", () => {
+    const get = (name: string) =>
+      name === "content-type" ? " application/vnd.test+json ; charset=us-ascii" : null
+    expect(contentTypeMediaTypeFromGet(get)).toBe("application/vnd.test+json")
+  })
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -129,6 +155,14 @@ describe("syncRepository", () => {
 
   it("syncs when lastSyncedAt is older than 5 minutes", async () => {
     mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - 10 * 60 * 1000) }])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    expect(mockListTags).toHaveBeenCalledWith("myrepo")
+  })
+
+  it("treats repository as stale when lastSyncedAt is exactly at 5 minute threshold", async () => {
+    const fiveMin = 5 * 60 * 1000
+    mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - fiveMin) }])
     mockListTags.mockResolvedValue([])
     await syncRepository("myrepo")
     expect(mockListTags).toHaveBeenCalledWith("myrepo")
@@ -223,6 +257,189 @@ describe("syncRepository", () => {
     expect(setStr).toContain("excluded.last_synced_at")
   })
 
+  it("fallback iterates layer sizes when resolve is stubbed to null (invalid vs usual)", async () => {
+    const spy = vi.spyOn(registryManifest, "resolveToImageManifest").mockResolvedValue(null)
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["st"])
+    mockGetJsonBlob.mockResolvedValue({})
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (k: string) =>
+          k === "content-type"
+            ? "application/vnd.docker.distribution.manifest.v2+json; charset=utf-8"
+            : k === "Docker-Content-Digest"
+              ? "sha256:mf"
+              : null,
+      },
+      json: async () => ({
+        layers: [{ size: 3 }, {}],
+        config: { os: "freebsd", digest: "sha256:emb" },
+      }),
+    })
+    await syncRepository("myrepo")
+    spy.mockRestore()
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
+    expect(metaCall[0].totalSize).toBe(3)
+    expect(metaCall[0].os).toBe("freebsd")
+  })
+
+  it("uses manifest fallback when resolveToImageManifest returns null", async () => {
+    const spy = vi.spyOn(registryManifest, "resolveToImageManifest").mockResolvedValue(null)
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["legacy"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (k: string) => {
+          if (k === "content-type") return "application/vnd.docker.distribution.manifest.v2+json"
+          if (k === "Docker-Content-Digest") return "sha256:from-header"
+          return null
+        },
+      },
+      json: async () => ({ layers: [] }),
+    })
+    await syncRepository("myrepo")
+    expect(spy).toHaveBeenCalledWith(
+      "myrepo",
+      expect.objectContaining({ layers: [] }),
+      "application/vnd.docker.distribution.manifest.v2+json",
+    )
+    spy.mockRestore()
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
+    expect(metaCall[0]).toMatchObject({
+      totalSize: 0,
+      os: null,
+      architecture: null,
+      createdAt: null,
+      labels: null,
+      digest: "sha256:from-header",
+    })
+  })
+
+  it("fallback maps embedded config created/os/arch when resolveToImageManifest returns null", async () => {
+    const spy = vi.spyOn(registryManifest, "resolveToImageManifest").mockResolvedValue(null)
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["cfg"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (k: string) => (k === "content-type" ? "application/vnd.docker.distribution.manifest.v2+json" : null),
+      },
+      json: async () => ({
+        layers: [],
+        config: {
+          os: "freebsd",
+          architecture: "arm64",
+          created: "2022-01-01T00:00:00.000Z",
+          digest: "sha256:emb",
+        },
+      }),
+    })
+    await syncRepository("myrepo")
+    spy.mockRestore()
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
+    expect(metaCall[0]).toMatchObject({
+      os: "freebsd",
+      architecture: "arm64",
+      createdAt: expect.any(Date),
+      digest: "sha256:emb",
+    })
+  })
+
+  it("manifest fallback when config is nullish uses optional config digest (no throw)", async () => {
+    const spy = vi.spyOn(registryManifest, "resolveToImageManifest").mockResolvedValue(null)
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["nulcfg"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (k: string) => (k === "content-type" ? "application/vnd.docker.distribution.manifest.v2+json" : null),
+      },
+      json: async () => ({ config: null, layers: [] }),
+    })
+    await syncRepository("myrepo")
+    spy.mockRestore()
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
+    expect(metaCall[0].digest).toBeNull()
+  })
+
+  it("fallback does not throw when config is missing (uses optional config fields only)", async () => {
+    const spy = vi.spyOn(registryManifest, "resolveToImageManifest").mockResolvedValue(null)
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["nocfg"])
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      headers: mockManifestHeaders(),
+      json: async () => ({ layers: [{ size: 1 }] }),
+    })
+    await syncRepository("myrepo")
+    spy.mockRestore()
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
+    expect(metaCall[0]).toMatchObject({ totalSize: 1, os: null, architecture: null, createdAt: null, digest: "sha256:manifestlayer" })
+  })
+
+  it("treats missing content-type header as empty mediaType", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["no-ct"])
+    mockGetJsonBlob.mockResolvedValue({})
+    const h = vi.fn((k: string) => (k === "Docker-Content-Digest" ? "sha256:hasct" : null))
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      headers: { get: h },
+      json: async () => ({
+        schemaVersion: 2,
+        mediaType: "application/vnd.docker.distribution.manifest.v2+json",
+        layers: [{ size: 2 }],
+        config: { digest: "sha256:cfg" },
+      }),
+    })
+    await syncRepository("myrepo")
+    expect(h).toHaveBeenCalledWith("content-type")
+    expect(mockGetJsonBlob).toHaveBeenCalled()
+  })
+
+  it("uses null digest in DB when registry omits Docker-Content-Digest on v2", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["nodig"])
+    mockGetJsonBlob.mockResolvedValue({})
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (k: string) => (k === "content-type" ? "application/vnd.docker.distribution.manifest.v2+json" : null),
+      },
+      json: async () => ({
+        schemaVersion: 2,
+        layers: [{ size: 1 }],
+        config: { digest: "sha256:cfg" },
+      }),
+    })
+    await syncRepository("myrepo")
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
+    expect(metaCall[0].digest).toBeNull()
+  })
+
+  it("resolves v2 image and uses null getJsonBlob result for labels", async () => {
+    mockLimit.mockResolvedValue([])
+    mockListTags.mockResolvedValue(["nolayer"])
+    mockGetJsonBlob.mockResolvedValueOnce(null)
+    mockGetManifest.mockResolvedValue({
+      ok: true,
+      headers: mockManifestHeaders(),
+      json: async () => ({
+        schemaVersion: 2,
+        mediaType: "application/vnd.docker.distribution.manifest.v2+json",
+        config: { digest: "sha256:needblob" },
+        layers: [{ size: 10 }],
+      }),
+    })
+    await syncRepository("myrepo")
+    expect(mockGetJsonBlob).toHaveBeenCalledWith("myrepo", "sha256:needblob")
+    const metaCall = (mockValues as any).mock.calls[0][0] as any
+    expect(metaCall[0].labels).toBeNull()
+    expect(metaCall[0].os).toBeNull()
+  })
+
   it("uses fsLayers when layers absent", async () => {
     mockLimit.mockResolvedValue([])
     mockListTags.mockResolvedValue(["v1"])
@@ -288,18 +505,19 @@ describe("syncRepository", () => {
   it("handles manifest with null config fields", async () => {
     mockLimit.mockResolvedValue([])
     mockListTags.mockResolvedValue(["minimal"])
+    mockGetJsonBlob.mockResolvedValueOnce({})
     mockGetManifest.mockResolvedValue({
       ok: true,
       headers: mockManifestHeaders(),
       json: async () => ({
         schemaVersion: 2,
-        layers: [],
-        config: {},
+        layers: [{ size: 1 }],
+        config: { mediaType: "application/vnd.docker.container.image.v1+json", digest: "sha256:emptycfg" },
       }),
     })
     await syncRepository("myrepo")
     const metaCall = (mockValues as any).mock.calls[0][0] as any
-    expect(metaCall[0]).toMatchObject({ os: null, architecture: null, createdAt: null })
+    expect(metaCall[0]).toMatchObject({ os: null, architecture: null, createdAt: null, labels: null })
   })
 
   it("handles manifest with missing config object", async () => {

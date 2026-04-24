@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest"
-import { generateKeyPair, exportPKCS8, importSPKI, jwtVerify } from "jose"
-import { issueRegistryToken, computeGrantedScope } from "@/lib/registry-token"
+import { generateKeyPair, exportPKCS8, importPKCS8, importSPKI, jwtVerify } from "jose"
+import { issueRegistryToken, computeGrantedScope, splitCommaScopeActions } from "@/lib/registry-token"
 
 const { mockSelect, mockLimit, mockWhere, mockFrom, mockInnerJoin, mockExecute } = vi.hoisted(() => {
   const mockExecute = vi.fn().mockResolvedValue([])
@@ -57,6 +57,16 @@ beforeAll(async () => {
   const { privateKey, publicKey: pub } = await generateKeyPair("RS256", { extractable: true })
   privatePem = await exportPKCS8(privateKey)
   publicKey = pub as CryptoKey
+})
+
+describe("splitCommaScopeActions", () => {
+  it("omits empty segments (but keeps valid comma-separated parts)", () => {
+    expect(splitCommaScopeActions("pull,,push,")).toEqual(["pull", "push"])
+  })
+
+  it("returns [] for a string of only commas", () => {
+    expect(splitCommaScopeActions(",,,")).toEqual([])
+  })
 })
 
 beforeEach(() => {
@@ -132,6 +142,16 @@ describe("issueRegistryToken", () => {
     expect(payload.access).toEqual([{ type: "repository", name: "r", actions: ["pull"] }])
   })
 
+  it("restores real newlines from env-escaped \\n before import (same transform as application code)", async () => {
+    const withEscapes = privatePem.replace(/\n/g, "\\n")
+    const fixed = withEscapes.replace(/\\n/g, "\n")
+    await expect(importPKCS8(fixed, "RS256")).resolves.toBeInstanceOf(CryptoKey)
+    vi.stubEnv("REGISTRY_TOKEN_PRIVATE_KEY", withEscapes)
+    const t = await issueRegistryToken({ subject: "a", service: "s", scope: "repository:r:pull" })
+    const { payload } = await jwtVerify(t, publicKey)
+    expect(payload.sub).toBe("a")
+  })
+
   it("filters empty actions in scope", async () => {
     const token = await issueRegistryToken({
       subject: "alice",
@@ -156,6 +176,10 @@ describe("issueRegistryToken", () => {
 describe("computeGrantedScope", () => {
   it("returns empty string for empty scope", async () => {
     expect(await computeGrantedScope("", ["admin"])).toBe("")
+  })
+
+  it("returns empty string when requested scope is undefined (falsy guard)", async () => {
+    expect(await computeGrantedScope(undefined as unknown as string, ["admin"])).toBe("")
   })
 
   it("returns empty string for scope with fewer than 3 parts", async () => {
@@ -381,6 +405,12 @@ describe("computeGrantedScope", () => {
       mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
       mockExecute.mockResolvedValueOnce([{ role: "pull", orgId: "org1" }])
       expect(await computeGrantedScope("repository:myorg/image:pull,push", [], "u1")).toBe("repository:myorg/image:pull")
+    })
+
+    it("denies delete and * to org viewer (isAdmin must stay false)", async () => {
+      mockExecute.mockResolvedValueOnce([{ username: "sofia" }])
+      mockExecute.mockResolvedValueOnce([{ role: "viewer", orgId: "org1" }])
+      expect(await computeGrantedScope("repository:myorg/image:delete,*,pull", [], "u1")).toBe("repository:myorg/image:pull")
     })
 
     it("denies access for unknown org role", async () => {

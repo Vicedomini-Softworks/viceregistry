@@ -20,7 +20,7 @@ export default defineConfig({
         "src/lib/registry-sync.ts",
         "src/middleware/index.ts",
       ],
-      thresholds: { lines: 95, functions: 95, branches: 95, statements: 95 },
+      thresholds: { lines: 100, functions: 100, branches: 100, statements: 100 },
       reporter: ["text", "json-summary"],
     },
   },
