@@ -71,17 +71,14 @@ const orgs = await db
 
   <script>
     import { toast } from "sonner"
+    import { deriveSlug } from "@/lib/derive-slug"
 
     const createBtn = document.getElementById("create-org-btn")
     createBtn?.addEventListener("click", async () => {
       const name = prompt("Enter organization name:")
       if (!name) return
 
-      const derivedSlug = name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 39)
+      const derivedSlug = deriveSlug(name)
 
       const slug = prompt("Enter organization slug (3–39 chars, lowercase, hyphens allowed):", derivedSlug)
       if (!slug) return

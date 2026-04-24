@@ -213,6 +213,12 @@ describe("deriveSlug", () => {
   it("handles mixed alphanumeric and special chars", () => {
     expect(deriveSlug("Hello, World! 2024")).toBe("hello-world-2024")
   })
+
+  it("folds Latin diacritics so letters are not stripped (e.g. accented capitals)", () => {
+    expect(deriveSlug("École 42")).toBe("ecole-42")
+    expect(deriveSlug("Café du Monde")).toBe("cafe-du-monde")
+    expect(deriveSlug("Müller & Co")).toBe("muller-co")
+  })
 })
 
 describe("updateSettingsSchema", () => {
