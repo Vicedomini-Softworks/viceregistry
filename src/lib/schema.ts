@@ -49,7 +49,7 @@ export const repositories = pgTable("repositories", {
   tagCount: integer("tag_count").notNull().default(0),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
   /** public = listed for anonymous users; private = only users with registry pull (RBAC) */
-  visibility: text("visibility").notNull().default("public"),
+  visibility: text("visibility").notNull().default("private"),
   /** Optional Hub-style README; overrides OCI label–based overview when set */
   overviewMarkdown: text("overview_markdown"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),

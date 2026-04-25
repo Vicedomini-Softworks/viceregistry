@@ -64,6 +64,13 @@
       "when": 1777118700000,
       "tag": "0008_totp_2fa",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777125200000,
+      "tag": "0009_private_repository_default",
+      "breakpoints": true
     }
   ]
 }

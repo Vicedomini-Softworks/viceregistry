@@ -25,7 +25,13 @@ export async function syncRepositories(): Promise<void> {
 
   await db
     .insert(repositories)
-    .values(names.map((name) => ({ name, lastSyncedAt: new Date() })))
+    .values(
+      names.map((name) => ({
+        name,
+        visibility: "private",
+        lastSyncedAt: new Date(),
+      })),
+    )
     .onConflictDoUpdate({
       target: repositories.name,
       set: { lastSyncedAt: new Date() },
@@ -151,7 +157,13 @@ export async function syncRepository(name: string): Promise<void> {
   // Upsert repository row with fresh tag count + size
   await db
     .insert(repositories)
-    .values({ name, tagCount: tags.length, sizeBytes: totalSize, lastSyncedAt: new Date() })
+    .values({
+      name,
+      tagCount: tags.length,
+      sizeBytes: totalSize,
+      visibility: "private",
+      lastSyncedAt: new Date(),
+    })
     .onConflictDoUpdate({
       target: repositories.name,
       set: { tagCount: tags.length, sizeBytes: totalSize, lastSyncedAt: new Date() },

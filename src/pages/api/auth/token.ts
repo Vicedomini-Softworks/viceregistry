@@ -1,9 +1,88 @@
 import type { APIRoute } from "astro"
 import { db } from "@/lib/db"
-import { users, userRoles, roles, accessTokens } from "@/lib/schema"
+import {
+  users,
+  userRoles,
+  roles,
+  accessTokens,
+  repositories,
+  userRepositoryPermissions,
+  organizations,
+  organizationRepositories,
+} from "@/lib/schema"
 import { issueRegistryToken, computeGrantedScope } from "@/lib/registry-token"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 import bcrypt from "bcryptjs"
+
+function parseRepositoryNameFromScope(scope: string): string | null {
+  const parts = scope.split(":")
+  if (parts.length < 3) return null
+  const [type, name] = parts
+  if (type !== "repository" || !name) return null
+  return name
+}
+
+function hasPushInScope(scope: string): boolean {
+  const parts = scope.split(":")
+  if (parts.length < 3) return false
+  const actions = parts[2]?.split(",") ?? []
+  return actions.includes("push")
+}
+
+async function assignRepositoryOwner(repositoryName: string, userId: string, username: string) {
+  // Ensure repository exists and stays private by default unless changed manually.
+  await db
+    .insert(repositories)
+    .values({
+      name: repositoryName,
+      visibility: "private",
+      lastSyncedAt: new Date(),
+    })
+    .onConflictDoNothing({ target: repositories.name })
+
+  const slashIdx = repositoryName.indexOf("/")
+  const namespace = slashIdx > 0 ? repositoryName.slice(0, slashIdx) : null
+
+  if (namespace) {
+    const [org] = await db
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(eq(organizations.slug, namespace))
+      .limit(1)
+
+    if (org) {
+      await db
+        .insert(organizationRepositories)
+        .values({
+          organizationId: org.id,
+          repositoryName,
+        })
+        .onConflictDoNothing({
+          target: [organizationRepositories.organizationId, organizationRepositories.repositoryName],
+        })
+      return
+    }
+  }
+
+  const [ownerUser] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.username, username)))
+    .limit(1)
+  if (!ownerUser) return
+
+  await db
+    .insert(userRepositoryPermissions)
+    .values({
+      userId: ownerUser.id,
+      repositoryName,
+      permission: "admin",
+    })
+    .onConflictDoUpdate({
+      target: [userRepositoryPermissions.userId, userRepositoryPermissions.repositoryName],
+      set: { permission: "admin" },
+    })
+}
 
 export const GET: APIRoute = async ({ request, url }) => {
   const service = url.searchParams.get("service") ?? ""
@@ -81,6 +160,13 @@ export const GET: APIRoute = async ({ request, url }) => {
   const roleNames = roleRows.map((r) => r.name)
 
   const grantedScope = await computeGrantedScope(scope, roleNames, user.id, tokenConstraints)
+
+  if (hasPushInScope(grantedScope)) {
+    const repositoryName = parseRepositoryNameFromScope(grantedScope)
+    if (repositoryName) {
+      await assignRepositoryOwner(repositoryName, user.id, user.username)
+    }
+  }
 
   const token = await issueRegistryToken({
     subject: username,
