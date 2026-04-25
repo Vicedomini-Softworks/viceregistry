@@ -15,10 +15,39 @@ const PUBLIC_ROUTES = [
   "/api/auth/webauthn/verify-authentication",
   "/api/health",
   "/api/search",
+  "/v2",
 ]
 
 // Admin only
 const ADMIN_PREFIXES = ["/admin", "/api/users"]
+
+export const onDockerRequest = defineMiddleware(async (context, next) => {
+  const { pathname, search } = context.url
+  
+  // Reverse proxy per /v2/*
+  if (pathname.startsWith("/v2/")) {
+    const targetUrl = `${process.env.REGISTRY_URL ?? "http://registry:5000"}${pathname}${search}`
+    // Clona headers tranne quelli hop-by-hop
+    const headers = new Headers(context.request.headers)
+    headers.delete("host")
+
+    // Fai forward della richiesta originale
+    const response = await fetch(targetUrl, {
+      method: context.request.method,
+      headers,
+      body: ["GET", "HEAD"].includes(context.request.method) ? undefined : context.request.body,
+      redirect: "manual",
+    })
+
+    // Ricostruisci la response da inoltrare al client Docker
+    return new Response(response.body, {
+      status: response.status,
+      headers: response.headers,
+    })
+  }
+
+  return next()
+})
 
 export const onRequest = defineMiddleware(async (context, next) => {
   const { pathname } = context.url
