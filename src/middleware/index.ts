@@ -109,4 +109,4 @@ export const authMiddleware = async (context: APIContext, next: MiddlewareNext) 
   return dockerMiddleware(context, next)
 }
 
-sequence(authMiddleware, dockerMiddleware)
+export const onRequest = sequence(authMiddleware, dockerMiddleware)
