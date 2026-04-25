@@ -93,6 +93,14 @@ export const GET: APIRoute = async ({ request, url }) => {
 
   let username = ""
   let password = ""
+
+  if (process.env.DEBUG === "true") {
+    console.log(
+      "username:", username,
+      "scope required:", scope  
+    );
+  }
+
   try {
     const decoded = atob(base64)
     const colonIdx = decoded.indexOf(":")
@@ -100,6 +108,7 @@ export const GET: APIRoute = async ({ request, url }) => {
     username = decoded.slice(0, colonIdx)
     password = decoded.slice(colonIdx + 1)
   } catch {
+    console.error("error decoding basic auth");
     return new Response(JSON.stringify({ errors: [{ code: "UNAUTHORIZED", message: "authentication required" }] }), {
       status: 401,
       headers: {
@@ -110,6 +119,9 @@ export const GET: APIRoute = async ({ request, url }) => {
   }
 
   if (!username || !password) {
+    if (process.env.DEBUG === "true") {
+      console.error("no username or password");
+    }
     return new Response(JSON.stringify({ errors: [{ code: "UNAUTHORIZED", message: "authentication required" }] }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -119,6 +131,9 @@ export const GET: APIRoute = async ({ request, url }) => {
   const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1)
 
   if (!user || !user.isActive) {
+    if (process.env.DEBUG === "true") {
+      console.error("user not found or not active");
+    }
     return new Response(JSON.stringify({ errors: [{ code: "UNAUTHORIZED", message: "invalid credentials" }] }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -129,7 +144,12 @@ export const GET: APIRoute = async ({ request, url }) => {
   let tokenConstraints: { organizationId?: string | null; repositoryName?: string | null } | undefined
 
   if (password.startsWith("vr_")) {
+    if (process.env.DEBUG === "true") {
+      console.log("access token used");
+    }
+
     const tokens = await db.select().from(accessTokens).where(eq(accessTokens.userId, user.id))
+    
     for (const t of tokens) {
       if (await bcrypt.compare(password, t.tokenHash)) {
         isAuthenticated = true
@@ -137,15 +157,28 @@ export const GET: APIRoute = async ({ request, url }) => {
           organizationId: t.organizationId,
           repositoryName: t.repositoryName,
         }
+        if (process.env.DEBUG === "true") {
+          console.log("token constraints:", tokenConstraints);
+          console.log("access token found");
+        }
         await db.update(accessTokens).set({ lastUsedAt: new Date() }).where(eq(accessTokens.id, t.id))
+        if (process.env.DEBUG === "true") {
+          console.log("access token updated");
+        }
         break
       }
     }
   } else {
+    if (process.env.DEBUG === "true") {
+      console.log("password used");
+    }
     isAuthenticated = await bcrypt.compare(password, user.passwordHash)
   }
 
   if (!isAuthenticated) {
+    if (process.env.DEBUG === "true") {
+      console.error("invalid credentials");
+    }
     return new Response(JSON.stringify({ errors: [{ code: "UNAUTHORIZED", message: "invalid credentials" }] }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -162,9 +195,18 @@ export const GET: APIRoute = async ({ request, url }) => {
   const grantedScope = await computeGrantedScope(scope, roleNames, user.id, tokenConstraints)
 
   if (hasPushInScope(grantedScope)) {
+    if (process.env.DEBUG === "true") {
+      console.log("push scope found");
+    }
     const repositoryName = parseRepositoryNameFromScope(grantedScope)
     if (repositoryName) {
+      if (process.env.DEBUG === "true") {
+        console.log("repository name:", repositoryName);
+      }
       await assignRepositoryOwner(repositoryName, user.id, user.username)
+      if (process.env.DEBUG === "true") {
+        console.log("repository owner assigned");
+      }
     }
   }
 
