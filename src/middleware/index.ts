@@ -1,5 +1,6 @@
 import { defineMiddleware } from "astro:middleware"
 import { verifySessionToken } from "@/lib/auth"
+import type { APIContext } from "astro"
 
 // No auth required at all
 const PUBLIC_ROUTES = [
@@ -21,7 +22,7 @@ const PUBLIC_ROUTES = [
 // Admin only
 const ADMIN_PREFIXES = ["/admin", "/api/users"]
 
-export const onDockerRequest = defineMiddleware(async (context, next) => {
+export const onDockerRequest = async (context: APIContext, next: any) => { // fixme
   const { pathname, search } = context.url
   
   // Reverse proxy per /v2/*
@@ -66,7 +67,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
   }
 
-  if (isPublic) return next()
+  if (isPublic) return onDockerRequest(context, next)
 
   // DELETE /api/registry/* requires admin
   if (pathname.startsWith("/api/registry/") && context.request.method === "DELETE") {
@@ -76,7 +77,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
         headers: { "Content-Type": "application/json" },
       })
     }
-    return next()
+    return onDockerRequest(context, next)
   }
 
   // Remaining auth-required routes
@@ -103,5 +104,5 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
   }
 
-  return next()
+  return onDockerRequest(context, next)
 })
