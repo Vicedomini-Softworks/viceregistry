@@ -6,7 +6,14 @@ import { verifyAuthenticationResponse } from "@simplewebauthn/server"
 import { createSessionToken, setSessionCookie } from "@/lib/auth"
 import { writeAuditLog } from "@/lib/audit"
 
-const appUrl = process.env.PUBLIC_URL || (process.env.NODE_ENV === "production" ? "https://localhost" : "http://localhost:4321")
+const appUrl = process.env.PUBLIC_URL;
+if (!appUrl) {
+  if (process.env.DEBUG === "true") {
+    console.error("PUBLIC_URL is not set");
+  }
+  throw new Error("PUBLIC_URL is not set");
+}
+
 const url = new URL(appUrl)
 const rpID = url.hostname
 const origin = url.origin
