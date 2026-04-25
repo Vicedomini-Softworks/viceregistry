@@ -1,33 +1,24 @@
 import type { APIRoute } from "astro"
-import { db } from "@/lib/db"
-import { users } from "@/lib/schema"
-import { eq } from "drizzle-orm"
 import { generateAuthenticationOptions } from "@simplewebauthn/server"
 
 const appUrl = process.env.PUBLIC_URL || (process.env.NODE_ENV === "production" ? "https://localhost" : "http://localhost:4321")
 const url = new URL(appUrl)
 const rpID = url.hostname
 
-export const POST: APIRoute = async ({ request }) => {
-  let body: any
-  try {
-    body = await request.json()
-  } catch {
-    return Response.json({ error: "Invalid JSON" }, { status: 400 })
-  }
-
-  const { username } = body
-  if (!username) return Response.json({ error: "Username required" }, { status: 400 })
-
-  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.username, username)).limit(1)
-  if (!user) return Response.json({ error: "User not found" }, { status: 404 })
-
+export const POST: APIRoute = async ({ cookies }) => {
   const options = await generateAuthenticationOptions({
     rpID,
     userVerification: "preferred",
   })
 
-  await db.update(users).set({ webauthnCurrentChallenge: options.challenge }).where(eq(users.id, user.id))
+  // Username-less passkey login: persist challenge in a short-lived HttpOnly cookie.
+  cookies.set("webauthn_auth_challenge", options.challenge, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 5,
+  })
 
   return Response.json(options)
 }

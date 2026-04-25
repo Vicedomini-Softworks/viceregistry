@@ -40,10 +40,6 @@ export default function LoginForm() {
   }
 
   const handleWebAuthnLogin = async () => {
-    if (!username) {
-      setError("Please enter your username first")
-      return
-    }
     setError("")
     setLoading(true)
 
@@ -51,7 +47,6 @@ export default function LoginForm() {
       const optsRes = await fetch("/api/auth/webauthn/generate-authentication-options", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username }),
       })
       if (!optsRes.ok) throw new Error((await optsRes.json()).error || "Failed to get options")
       const options = await optsRes.json()
@@ -61,7 +56,7 @@ export default function LoginForm() {
       const verifyRes = await fetch("/api/auth/webauthn/verify-authentication", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, response: authResp }),
+        body: JSON.stringify({ response: authResp }),
       })
 
       if (verifyRes.ok) {

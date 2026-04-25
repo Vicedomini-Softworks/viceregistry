@@ -19,18 +19,11 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     return Response.json({ error: "Invalid JSON" }, { status: 400 })
   }
 
-  const { username, response } = body
-  if (!username || !response) return Response.json({ error: "Missing username or response" }, { status: 400 })
+  const { response } = body
+  if (!response) return Response.json({ error: "Missing response" }, { status: 400 })
 
-  const [user] = await db
-    .select({ id: users.id, username: users.username, email: users.email, webauthnCurrentChallenge: users.webauthnCurrentChallenge })
-    .from(users)
-    .where(eq(users.username, username))
-    .limit(1)
-
-  if (!user || !user.webauthnCurrentChallenge) {
-    return Response.json({ error: "No challenge found" }, { status: 400 })
-  }
+  const challenge = cookies.get("webauthn_auth_challenge")?.value
+  if (!challenge) return Response.json({ error: "No challenge found" }, { status: 400 })
 
   const [credential] = await db
     .select()
@@ -38,15 +31,23 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     .where(eq(webauthnCredentials.id, response.id))
     .limit(1)
 
-  if (!credential || credential.userId !== user.id) {
+  if (!credential) {
     return Response.json({ error: "Credential not found" }, { status: 400 })
   }
+
+  const [user] = await db
+    .select({ id: users.id, username: users.username, email: users.email })
+    .from(users)
+    .where(eq(users.id, credential.userId))
+    .limit(1)
+
+  if (!user) return Response.json({ error: "User not found" }, { status: 400 })
 
   let verification
   try {
     verification = await verifyAuthenticationResponse({
       response,
-      expectedChallenge: user.webauthnCurrentChallenge,
+      expectedChallenge: challenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
       credential: {
@@ -66,7 +67,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       .set({ counter: verification.authenticationInfo.newCounter, lastUsedAt: new Date() })
       .where(eq(webauthnCredentials.id, credential.id))
 
-    await db.update(users).set({ webauthnCurrentChallenge: null }).where(eq(users.id, user.id))
+    cookies.delete("webauthn_auth_challenge", { path: "/" })
 
     const userRolesRows = await db
       .select({ name: roles.name })
