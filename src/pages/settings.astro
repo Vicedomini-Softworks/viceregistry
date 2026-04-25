@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Fingerprint, Trash2 } from "lucide-react"
 import { db } from "@/lib/db"
-import { webauthnCredentials, accessTokens, organizations, organizationMembers, repositories } from "@/lib/schema"
+import { webauthnCredentials, accessTokens, organizations, organizationMembers, repositories, users } from "@/lib/schema"
 import { eq, desc } from "drizzle-orm"
 
 const user = Astro.locals.user
@@ -43,6 +43,11 @@ const userOrgs = await db
   .where(eq(organizationMembers.userId, user.sub))
 
 const allRepos = await db.select({ name: repositories.name }).from(repositories)
+const [security] = await db
+  .select({ totpEnabled: users.totpEnabled })
+  .from(users)
+  .where(eq(users.id, user.sub))
+  .limit(1)
 ---
 
 <AppLayout title="Settings">
@@ -100,6 +105,65 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
           <Fingerprint className="mr-2 h-4 w-4" />
           Register New Passkey
         </Button>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Two-Factor Authentication</CardTitle>
+        <CardDescription>Protect your account with an authenticator app (TOTP)</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div class="flex items-center justify-between rounded-md border p-3">
+          <div class="flex flex-col">
+            <span class="text-sm font-medium">Authenticator App</span>
+            <span class="text-xs text-muted-foreground">
+              {security?.totpEnabled ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+          {!security?.totpEnabled ? (
+            <Button id="totp-start-btn" variant="outline">Enable 2FA</Button>
+          ) : (
+            <Button id="totp-disable-btn" variant="destructive">Disable 2FA</Button>
+          )}
+        </div>
+
+        {!security?.totpEnabled && (
+          <div id="totp-setup-container" class="hidden flex-col gap-3 rounded-md border p-3">
+            <p class="text-sm">Add this key in your authenticator app:</p>
+            <code id="totp-secret" class="rounded bg-muted px-2 py-1 text-xs break-all"></code>
+            <p class="text-xs text-muted-foreground">Or paste this URI into your app:</p>
+            <code id="totp-uri" class="rounded bg-muted px-2 py-1 text-[10px] break-all"></code>
+            <div class="flex flex-col gap-1.5">
+              <label for="totp-enable-code" class="text-sm font-medium">Verification code</label>
+              <input
+                id="totp-enable-code"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]{6}"
+                maxlength="6"
+                placeholder="123456"
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <Button id="totp-confirm-btn">Confirm and Enable</Button>
+          </div>
+        )}
+
+        {security?.totpEnabled && (
+          <div class="flex flex-col gap-2 rounded-md border p-3">
+            <label for="totp-disable-code" class="text-sm font-medium">Enter code to disable 2FA</label>
+            <input
+              id="totp-disable-code"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]{6}"
+              maxlength="6"
+              placeholder="123456"
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
 
@@ -276,6 +340,9 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
     const form = document.getElementById("settings-form") as HTMLFormElement
     const btn = document.getElementById("save-btn") as HTMLButtonElement
     const passkeyBtn = document.getElementById("register-passkey-btn") as HTMLButtonElement
+    const totpStartBtn = document.getElementById("totp-start-btn") as HTMLButtonElement | null
+    const totpConfirmBtn = document.getElementById("totp-confirm-btn") as HTMLButtonElement | null
+    const totpDisableBtn = document.getElementById("totp-disable-btn") as HTMLButtonElement | null
 
     passkeyBtn?.addEventListener("click", async () => {
       passkeyBtn.disabled = true
@@ -303,6 +370,84 @@ const allRepos = await db.select({ name: repositories.name }).from(repositories)
         toast.error(err.message || "Failed to register passkey")
       } finally {
         passkeyBtn.disabled = false
+      }
+    })
+
+    totpStartBtn?.addEventListener("click", async () => {
+      totpStartBtn.disabled = true
+      try {
+        const res = await fetch("/api/auth/totp/setup", {
+          method: "POST",
+          credentials: "include",
+        })
+        if (!res.ok) throw new Error((await res.json()).error || "Failed to start 2FA setup")
+        const data = await res.json()
+
+        const setupContainer = document.getElementById("totp-setup-container")
+        const secretEl = document.getElementById("totp-secret")
+        const uriEl = document.getElementById("totp-uri")
+        if (setupContainer && secretEl && uriEl) {
+          secretEl.textContent = data.secret
+          uriEl.textContent = data.otpauthUrl
+          setupContainer.classList.remove("hidden")
+          setupContainer.classList.add("flex")
+        }
+        toast.success("2FA setup started. Add the key to your app.")
+      } catch (err: any) {
+        toast.error(err.message || "Failed to start 2FA setup")
+      } finally {
+        totpStartBtn.disabled = false
+      }
+    })
+
+    totpConfirmBtn?.addEventListener("click", async () => {
+      const input = document.getElementById("totp-enable-code") as HTMLInputElement | null
+      const code = input?.value?.trim()
+      if (!code || !/^\d{6}$/.test(code)) {
+        toast.error("Enter a valid 6-digit code")
+        return
+      }
+      totpConfirmBtn.disabled = true
+      try {
+        const res = await fetch("/api/auth/totp/enable", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ code }),
+        })
+        if (!res.ok) throw new Error((await res.json()).error || "Failed to enable 2FA")
+        toast.success("2FA enabled successfully")
+        setTimeout(() => window.location.reload(), 800)
+      } catch (err: any) {
+        toast.error(err.message || "Failed to enable 2FA")
+      } finally {
+        totpConfirmBtn.disabled = false
+      }
+    })
+
+    totpDisableBtn?.addEventListener("click", async () => {
+      const input = document.getElementById("totp-disable-code") as HTMLInputElement | null
+      const code = input?.value?.trim()
+      if (!code || !/^\d{6}$/.test(code)) {
+        toast.error("Enter a valid 6-digit code")
+        return
+      }
+      if (!confirm("Disable authenticator app 2FA for this account?")) return
+      totpDisableBtn.disabled = true
+      try {
+        const res = await fetch("/api/auth/totp/disable", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ code }),
+        })
+        if (!res.ok) throw new Error((await res.json()).error || "Failed to disable 2FA")
+        toast.success("2FA disabled")
+        setTimeout(() => window.location.reload(), 800)
+      } catch (err: any) {
+        toast.error(err.message || "Failed to disable 2FA")
+      } finally {
+        totpDisableBtn.disabled = false
       }
     })
 

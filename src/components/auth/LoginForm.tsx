@@ -10,6 +10,8 @@ import { startAuthentication } from "@simplewebauthn/browser"
 export default function LoginForm() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [totpCode, setTotpCode] = useState("")
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -22,15 +24,24 @@ export default function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, totpCode: totpCode || undefined }),
       })
 
       if (res.ok) {
+        const data = await res.json()
+        if (data.requiresTwoFactor) {
+          setRequiresTwoFactor(true)
+          setError("Enter the 6-digit code from your authenticator app")
+          return
+        }
         window.location.href = "/dashboard"
         return
       }
 
       const data = await res.json()
+      if (data.requiresTwoFactor) {
+        setRequiresTwoFactor(true)
+      }
       setError(data.error ?? "Login failed")
     } catch {
       setError("Network error, please try again")
@@ -112,6 +123,23 @@ export default function LoginForm() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+            {requiresTwoFactor && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="totp">Authenticator Code</Label>
+                <Input
+                  id="totp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  placeholder="123456"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  required
+                />
+              </div>
+            )}
             <Button type="submit" disabled={loading} className="w-full">
               {loading ? "Signing in…" : "Sign in"}
             </Button>

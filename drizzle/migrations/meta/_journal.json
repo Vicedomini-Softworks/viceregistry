@@ -57,6 +57,13 @@
       "when": 1776992937561,
       "tag": "0007_hub_overview_labels",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777118700000,
+      "tag": "0008_totp_2fa",
+      "breakpoints": true
     }
   ]
 }
