@@ -42,11 +42,16 @@ export const dockerMiddleware = async (context: APIContext, next: MiddlewareNext
       redirect: "manual",
     })
 
-    // Ricostruisci la response da inoltrare al client Docker
+    // Ricostruisci manualmente gli headers per evitare filtri
+    const responseHeaders = new Headers()
+    for (const [key, value] of response.headers.entries()) {
+      responseHeaders.set(key, value)
+    }
     return new Response(response.body, {
       status: response.status,
-      headers: response.headers,
+      headers: responseHeaders,
     })
+
   }
 
   return next()
