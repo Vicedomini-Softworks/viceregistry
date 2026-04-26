@@ -1,7 +1,32 @@
 import { SignJWT, importPKCS8 } from "jose"
+import { createPrivateKey, createPublicKey, createHash } from "crypto"
 import { db } from "@/lib/db"
 import { organizations, organizationRepositories, organizationMembers, userRepositoryPermissions, users } from "@/lib/schema"
 import { eq, and } from "drizzle-orm"
+
+const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+function base32Encode(buf: Buffer): string {
+  let result = ""
+  let bits = 0
+  let value = 0
+  for (const byte of buf) {
+    value = (value << 8) | byte
+    bits += 8
+    while (bits >= 5) {
+      bits -= 5
+      result += BASE32[(value >>> bits) & 0x1f]
+    }
+  }
+  if (bits > 0) result += BASE32[(value << (5 - bits)) & 0x1f]
+  return result
+}
+
+function computeKeyId(privateKeyPem: string): string {
+  const der = createPublicKey(createPrivateKey(privateKeyPem)).export({ type: "spki", format: "der" }) as Buffer
+  const hash = createHash("sha256").update(der).digest()
+  return base32Encode(hash.subarray(0, 30)).slice(0, 48).match(/.{4}/g)!.join(":")
+}
 
 export interface TokenClaims {
   subject: string
@@ -28,8 +53,10 @@ export async function issueRegistryToken(claims: TokenClaims): Promise<string> {
 
   const access = parseScopeToAccess(claims.scope)
 
+  const kid = computeKeyId(privateKeyPem)
+
   return new SignJWT({ access, sub: claims.subject })
-    .setProtectedHeader({ alg: "RS256" })
+    .setProtectedHeader({ alg: "RS256", kid })
     .setIssuedAt()
     .setExpirationTime("5m")
     .setAudience(claims.service)
