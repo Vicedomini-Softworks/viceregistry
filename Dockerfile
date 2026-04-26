@@ -1,4 +1,4 @@
-# ── Stage 1: Build ────────────────────────────────────────────────────────────
+# ── Stage 1: Build ─────────────────────────────��──────────────────────────────
 FROM node:22-alpine AS builder
 WORKDIR /app
 
@@ -7,40 +7,37 @@ RUN npm ci
 
 COPY . .
 
-# Ensure keys dir exists (RSA keys are provided via env vars at runtime)
 RUN mkdir -p keys
-
 RUN npm run build
 
-# ── Stage 2: Runner ───────────────────────────────────────────────────────────
+# ── Stage 2: Runner ───────────────────────��───────────────────────────────────
 FROM node:22-alpine AS runner
 WORKDIR /app
 
-RUN addgroup -g 1001 -S nodejs && \
-    adduser  -u 1001 -S astro  -G nodejs
+RUN apk add --no-cache nginx supervisor gettext
 
-# Copy only what the standalone server needs
-COPY --from=builder --chown=astro:nodejs /app/dist ./dist
-COPY --from=builder --chown=astro:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=astro:nodejs /app/package.json ./package.json
-COPY --from=builder --chown=astro:nodejs /app/drizzle.config.ts ./drizzle.config.ts
-COPY --from=builder --chown=astro:nodejs /app/src/lib/schema.ts ./src/lib/schema.ts
+# Copy app artifacts
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=builder /app/src/lib/schema.ts ./src/lib/schema.ts
+COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/scripts ./scripts
 
-# Drizzle migrations (run via db:migrate in entrypoint or init container)
-COPY --from=builder --chown=astro:nodejs /app/drizzle ./drizzle
-COPY --from=builder --chown=astro:nodejs /app/scripts ./scripts
+# nginx + supervisor config
+COPY nginx.conf.template /etc/nginx/nginx.conf.template
+COPY supervisord.conf /etc/supervisord.conf
 
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-USER astro
 EXPOSE 4321
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- http://localhost:4321/api/health || exit 1
+  CMD wget -qO- http://localhost:3000/api/health || exit 1
 
-ENV HOST=0.0.0.0
 ENV PORT=4321
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["node", "dist/server/entry.mjs"]
+CMD ["supervisord", "-c", "/etc/supervisord.conf"]

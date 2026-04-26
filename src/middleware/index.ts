@@ -1,8 +1,6 @@
-import { sequence } from "astro:middleware"
 import { verifySessionToken } from "@/lib/auth"
-import type { APIContext, MiddlewareNext } from "astro"
+import type { APIContext, MiddlewareHandler, MiddlewareNext } from "astro"
 
-// No auth required at all
 const PUBLIC_ROUTES = [
   "/login",
   "/dashboard",
@@ -11,63 +9,21 @@ const PUBLIC_ROUTES = [
   "/image",
   "/api/auth/login",
   "/api/auth/token",
-  // Passkey sign-in (no session yet; must not require auth)
   "/api/auth/webauthn/generate-authentication-options",
   "/api/auth/webauthn/verify-authentication",
   "/api/health",
   "/api/search",
-  "/v2",
 ]
 
-
-
-// Admin only
 const ADMIN_PREFIXES = ["/admin", "/api/users"]
 
-export const dockerMiddleware = async (context: APIContext, next: MiddlewareNext) => {
-  const { pathname, search } = context.url
-  
-  // Reverse proxy per /v2/*
-  if (pathname.startsWith("/v2/")) {
-    const targetUrl = `${process.env.REGISTRY_URL ?? "http://registry:5000"}${pathname}${search}`
-    // Clona headers tranne quelli hop-by-hop
-    const headers = new Headers(context.request.headers)
-    headers.delete("host")
-
-    // Fai forward della richiesta originale
-    const hasBody = !["GET", "HEAD"].includes(context.request.method)
-    const response = await fetch(targetUrl, {
-      method: context.request.method,
-      headers,
-      body: hasBody ? context.request.body : undefined,
-      redirect: "manual",
-      // @ts-ignore — required for Node.js native fetch with streaming request bodies
-      duplex: hasBody ? "half" : undefined,
-    })
-
-    // Ricostruisci manualmente gli headers per evitare filtri
-    const responseHeaders = new Headers()
-    for (const [key, value] of response.headers.entries()) {
-      responseHeaders.set(key, value)
-    }
-    return new Response(response.body, {
-      status: response.status,
-      headers: responseHeaders,
-    })
-
-  }
-
-  return next()
-}
-
-export const authMiddleware = async (context: APIContext, next: MiddlewareNext) => { 
+export const onRequest: MiddlewareHandler = async (context: APIContext, next: MiddlewareNext) => {
   const { pathname } = context.url
 
   const isPublic = PUBLIC_ROUTES.some(
     (r) => pathname === r || pathname.startsWith(r + "/"),
   )
 
-  // Try to attach user from session cookie on every request (best-effort)
   const sessionToken = context.cookies.get("session")?.value
   if (sessionToken) {
     try {
@@ -77,9 +33,8 @@ export const authMiddleware = async (context: APIContext, next: MiddlewareNext) 
     }
   }
 
-  if (isPublic) return dockerMiddleware(context, next)
+  if (isPublic) return next()
 
-  // DELETE /api/registry/* requires admin
   if (pathname.startsWith("/api/registry/") && context.request.method === "DELETE") {
     if (!context.locals.user?.roles?.includes("admin")) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
@@ -87,10 +42,9 @@ export const authMiddleware = async (context: APIContext, next: MiddlewareNext) 
         headers: { "Content-Type": "application/json" },
       })
     }
-    return dockerMiddleware(context, next)
+    return next()
   }
 
-  // Remaining auth-required routes
   if (!context.locals.user) {
     if (pathname.startsWith("/api/")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -101,7 +55,6 @@ export const authMiddleware = async (context: APIContext, next: MiddlewareNext) 
     return context.redirect("/login")
   }
 
-  // Admin guard
   if (ADMIN_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     if (!context.locals.user.roles?.includes("admin")) {
       if (pathname.startsWith("/api/")) {
@@ -114,7 +67,5 @@ export const authMiddleware = async (context: APIContext, next: MiddlewareNext) 
     }
   }
 
-  return dockerMiddleware(context, next)
+  return next()
 }
-
-export const onRequest = sequence(authMiddleware, dockerMiddleware)
