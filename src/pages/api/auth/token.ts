@@ -153,6 +153,7 @@ async function handleTokenRequest(username: string, password: string, service: s
 
   return Response.json({
     token,
+    access_token: token,
     issued_at: new Date().toISOString(),
     expires_in: 300,
   })
