@@ -35,11 +35,14 @@ export const dockerMiddleware = async (context: APIContext, next: MiddlewareNext
     headers.delete("host")
 
     // Fai forward della richiesta originale
+    const hasBody = !["GET", "HEAD"].includes(context.request.method)
     const response = await fetch(targetUrl, {
       method: context.request.method,
       headers,
-      body: ["GET", "HEAD"].includes(context.request.method) ? undefined : context.request.body,
+      body: hasBody ? context.request.body : undefined,
       redirect: "manual",
+      // @ts-ignore — required for Node.js native fetch with streaming request bodies
+      duplex: hasBody ? "half" : undefined,
     })
 
     // Ricostruisci manualmente gli headers per evitare filtri
