@@ -13,4 +13,7 @@ export default defineConfig({
     plugins: [tailwindcss()],
   },
   integrations: [react()],
+  security: {
+    checkOrigin: false,
+  },
 })
