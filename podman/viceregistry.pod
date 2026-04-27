@@ -1,0 +1,10 @@
+[Pod]
+PodName=viceregistry
+PublishPort=4321:4321
+PublishPort=5000:5000
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

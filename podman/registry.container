@@ -1,0 +1,25 @@
+[Unit]
+Description=Viceregistry Docker Registry
+
+[Container]
+Image=docker.io/library/registry:2
+ContainerName=viceregistry-registry
+Pod=viceregistry.pod
+
+EnvFile=/etc/viceregistry/.env
+Environment=REGISTRY_AUTH=token
+Environment=REGISTRY_AUTH_TOKEN_SERVICE=registry.local
+Environment=REGISTRY_AUTH_TOKEN_ISSUER=viceregistry
+Environment=REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE=/certs/token.crt
+Environment=REGISTRY_STORAGE_DELETE_ENABLED=true
+Environment=REGISTRY_LOG_LEVEL=warn
+
+# Cert written by deploy.sh — refreshed on each deploy / key rotation
+Volume=/etc/viceregistry/certs:/certs:ro,Z
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

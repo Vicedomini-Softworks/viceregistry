@@ -1,0 +1,19 @@
+[Unit]
+Description=Viceregistry App
+After=db.service registry.service
+
+[Container]
+Image=ghcr.io/vicedomini-softworks/viceregistry:latest
+ContainerName=viceregistry-app
+Pod=viceregistry.pod
+
+EnvFile=/etc/viceregistry/.env
+
+[Service]
+# Wait for postgres to be healthy before entrypoint runs migrations
+ExecStartPre=/bin/bash -c 'for i in $(seq 30); do podman healthcheck run viceregistry-db &>/dev/null && exit 0; sleep 2; done; echo "db not healthy after 60s" >&2; exit 1'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

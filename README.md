@@ -26,7 +26,7 @@ The app acts as a Docker Registry token auth server — the registry delegates a
 ## Prerequisites
 
 - Node.js 22+
-- Docker + Docker Compose
+- Docker + Docker Compose **or** Podman 4.4+ (CentOS/RHEL production)
 - A PostgreSQL instance (provided by compose in local dev)
 - An S3 bucket (MinIO provided by compose in local dev, AWS S3 for production)
 
@@ -122,7 +122,83 @@ The image now appears in the dashboard.
 
 ## Production deployment
 
-### Build the image
+### Option A — Podman on CentOS/RHEL (recommended)
+
+Uses rootful Podman with systemd Quadlet units. All three containers (app, registry, db) run inside a single pod sharing the same network namespace. No Docker or docker-compose required.
+
+#### 1. Install Podman
+
+```bash
+dnf install -y podman
+```
+
+#### 2. Configure
+
+```bash
+cp podman/config/app.env.example /etc/viceregistry/.env
+# Edit /etc/viceregistry/.env — fill in all CHANGE_ME values
+```
+
+Key variables to set:
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | `postgresql://viceregistry:<password>@localhost:5432/viceregistry` — use `localhost`, containers share network |
+| `POSTGRES_PASSWORD` | Must match password in `DATABASE_URL` |
+| `SESSION_SECRET` | `openssl rand -hex 32` |
+| `REGISTRY_URL` | `http://localhost:5000` — use `localhost` for the same reason |
+| `REGISTRY_TOKEN_PRIVATE_KEY` | From `npm run keys:generate` |
+| `REGISTRY_TOKEN_PUBLIC_KEY` | From `npm run keys:generate` |
+| `REGISTRY_AUTH_TOKEN_REALM` | `https://registry.example.com/api/auth/token` |
+| `REGISTRY_PUBLIC_HOST` | `registry.example.com` |
+| `AWS_*` / `REGISTRY_STORAGE_S3_*` | S3 credentials (set both blocks — registry uses its own var names) |
+
+If GHCR is private, authenticate first:
+
+```bash
+podman login ghcr.io
+```
+
+#### 3. Deploy
+
+```bash
+sudo ./podman/deploy.sh
+```
+
+The script:
+1. Validates all required env vars
+2. Writes the RSA public key to `/etc/viceregistry/certs/token.crt`
+3. Installs Quadlet units to `/etc/containers/systemd/`
+4. Pulls `ghcr.io/vicedomini-softworks/viceregistry:latest`, `postgres:17-alpine`, `registry:2`
+5. Starts the pod → `db` (waits healthy) → `registry` → `app`
+6. The app container runs migrations and seeds the admin user on first start
+
+Re-deploy after a config change or image update:
+
+```bash
+sudo ./podman/deploy.sh
+```
+
+View logs:
+
+```bash
+journalctl -fu app.service
+journalctl -fu db.service
+journalctl -fu registry.service
+```
+
+#### Rotating RSA keys
+
+```bash
+# Update REGISTRY_TOKEN_PRIVATE_KEY and REGISTRY_TOKEN_PUBLIC_KEY in /etc/viceregistry/.env
+sudo ./podman/deploy.sh   # rewrites the cert and restarts all services
+```
+
+---
+
+### Option B — Docker Compose
+
+#### Build the image
 
 ```bash
 docker build -t viceregistry .
@@ -130,7 +206,7 @@ docker build -t viceregistry .
 
 The Dockerfile is multi-stage (builder → runner), runs as a non-root user (uid 1001), and exposes port 4321. A health check pings `/api/health`.
 
-### Deploy with AWS S3
+#### Deploy with AWS S3
 
 Use the production override file to swap MinIO for AWS S3:
 
@@ -148,15 +224,9 @@ S3_BUCKET=my-registry-bucket
 S3_ENDPOINT_URL=   # leave blank for native AWS
 ```
 
-### Registry token realm
+---
 
-The `REGISTRY_AUTH_TOKEN_REALM` in `docker-compose.yml` must be the **externally reachable** URL of `/api/auth/token` — the URL that Docker clients contact, not the internal container address. Change it to your public domain:
-
-```yaml
-REGISTRY_AUTH_TOKEN_REALM: https://registry.example.com/api/auth/token
-```
-
-### TLS
+### TLS (both options)
 
 Put a reverse proxy (nginx, Caddy, Traefik) in front of the app and the registry. Docker requires HTTPS for registries unless the host is `localhost`.
 
@@ -164,15 +234,19 @@ Example Caddyfile:
 
 ```
 registry.example.com {
-  reverse_proxy app:4321
-}
-
-registry-api.example.com {
-  reverse_proxy registry:5000
+  reverse_proxy localhost:4321
 }
 ```
 
-If the registry is on a separate subdomain, update `REGISTRY_PUBLIC_HOST` and `REGISTRY_URL` accordingly.
+If the registry is on a separate port or subdomain, update `REGISTRY_PUBLIC_HOST` and `REGISTRY_URL` accordingly.
+
+### Registry token realm
+
+`REGISTRY_AUTH_TOKEN_REALM` must be the **externally reachable** URL of `/api/auth/token` — the URL Docker clients contact, not the internal container address:
+
+```
+REGISTRY_AUTH_TOKEN_REALM=https://registry.example.com/api/auth/token
+```
 
 ## User roles
 

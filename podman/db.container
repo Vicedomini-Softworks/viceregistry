@@ -1,0 +1,26 @@
+[Unit]
+Description=Viceregistry Database
+
+[Container]
+Image=docker.io/library/postgres:17-alpine
+ContainerName=viceregistry-db
+Pod=viceregistry.pod
+
+EnvFile=/etc/viceregistry/.env
+Environment=POSTGRES_USER=viceregistry
+Environment=POSTGRES_DB=viceregistry
+
+Volume=pgdata.volume:/var/lib/postgresql/data
+
+HealthCmd=pg_isready -U viceregistry
+HealthInterval=10s
+HealthRetries=5
+HealthTimeout=5s
+HealthStartPeriod=15s
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
