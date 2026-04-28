@@ -6,6 +6,8 @@ import { and, count, eq, notInArray, sql } from "drizzle-orm"
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
+const log = (msg: string) => console.log(`[registry-sync] ${msg}`)
+
 /** First segment of Content-Type (strips parameters such as charset). */
 export function contentTypeMediaTypeFromGet(get: (name: string) => string | null): string {
   const raw = get("content-type")
@@ -20,9 +22,15 @@ function isStale(date: Date | null | undefined): boolean {
 
 /** Sync repository list from registry → PG. Fast: one registry API call. */
 export async function syncRepositories(): Promise<void> {
+  log("syncRepositories: fetching repo list from registry")
   const names = await listRepositories()
-  if (names.length === 0) return
+  log(`syncRepositories: registry returned ${names.length} repos`)
+  if (names.length === 0) {
+    log("syncRepositories: nothing to do (registry empty)")
+    return
+  }
 
+  log(`syncRepositories: pruning repos not in registry, upserting [${names.join(", ")}]`)
   // Remove repos that no longer exist in the registry
   await db.delete(repositories).where(notInArray(repositories.name, names))
 
@@ -37,6 +45,7 @@ export async function syncRepositories(): Promise<void> {
       })),
     )
     .onConflictDoNothing()
+  log("syncRepositories: done")
 }
 
 /**
@@ -45,24 +54,41 @@ export async function syncRepositories(): Promise<void> {
  * Resolves OCI / Docker v2 manifest lists, fetches config blobs for labels and os/arch/created.
  */
 export async function syncRepository(name: string, force = false): Promise<void> {
+  log(`syncRepository(${name}): start${force ? " [force]" : ""}`)
+
   if (!force) {
-    const [existing] = await db
+    const [row] = await db
       .select({ lastSyncedAt: repositories.lastSyncedAt, tagCount: repositories.tagCount })
       .from(repositories)
       .where(eq(repositories.name, name))
       .limit(1)
 
-    if (!isStale(existing?.lastSyncedAt)) {
-      // Still check if DB is missing rows that the repo record says should exist
+    if (row && !isStale(row.lastSyncedAt)) {
+      const knownCount = row.tagCount ?? 0
+      log(
+        `syncRepository(${name}): fresh (lastSyncedAt=${row.lastSyncedAt!.toISOString()}), checking DB row count vs tagCount=${knownCount}`,
+      )
       const [{ value: dbCount }] = await db
         .select({ value: count() })
         .from(imageMetadata)
         .where(eq(imageMetadata.repository, name))
-      if (dbCount === (existing?.tagCount ?? 0)) return
+        .limit(1)
+      if (dbCount === knownCount) {
+        log(`syncRepository(${name}): DB count ${dbCount} matches tagCount, skipping`)
+        return
+      }
+      log(
+        `syncRepository(${name}): DB count ${dbCount} != tagCount ${knownCount}, forcing sync to recover missing rows`,
+      )
+    } else {
+      log(
+        `syncRepository(${name}): stale (lastSyncedAt=${row?.lastSyncedAt?.toISOString() ?? "none"}), proceeding`,
+      )
     }
   }
 
   const tags = await listTags(name)
+  log(`syncRepository(${name}): fetched ${tags.length} tags from registry`)
 
   // Fetch manifests in parallel (max 8 concurrent)
   const chunk = (arr: string[], size: number) =>
@@ -70,14 +96,20 @@ export async function syncRepository(name: string, force = false): Promise<void>
       arr.slice(i * size, i * size + size),
     )
 
+  const batches = chunk(tags, 8)
   let totalSize = 0
   const metaRows: (typeof imageMetadata.$inferInsert)[] = []
 
-  for (const batch of chunk(tags, 8)) {
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i]!
+    log(`syncRepository(${name}): fetching manifests for batch ${i + 1}/${batches.length} [${batch.join(", ")}]`)
     const results = await Promise.allSettled(
       batch.map(async (tag) => {
         const res = await getManifest(name, tag)
-        if (!res.ok) return null
+        if (!res.ok) {
+          log(`syncRepository(${name}): manifest fetch failed for tag=${tag} (status not ok)`)
+          return null
+        }
         const contentDigest = res.headers.get("Docker-Content-Digest")
         const mediaType = contentTypeMediaTypeFromGet((k) => res.headers.get(k))
         const manifest = (await res.json()) as Record<string, unknown>
@@ -98,6 +130,7 @@ export async function syncRepository(name: string, force = false): Promise<void>
             createdAt = parsed.createdAt
             labels = parsed.labels
           }
+          log(`syncRepository(${name}): tag=${tag} resolved: size=${size} os=${os} arch=${arch} digest=${contentDigest}`)
           return {
             tag,
             totalSize: size,
@@ -115,6 +148,7 @@ export async function syncRepository(name: string, force = false): Promise<void>
         const mConfig = manifest.config as
           | { os?: string; architecture?: string; created?: string; digest?: string }
           | undefined
+        log(`syncRepository(${name}): tag=${tag} fallback path: size=${size} digest=${contentDigest ?? mConfig?.digest}`)
         return {
           tag,
           totalSize: size,
@@ -145,6 +179,8 @@ export async function syncRepository(name: string, force = false): Promise<void>
     }
   }
 
+  log(`syncRepository(${name}): upserting ${metaRows.length} metadata rows (totalSize=${totalSize})`)
+
   // Upsert all metadata rows
   if (metaRows.length > 0) {
     await db
@@ -166,14 +202,17 @@ export async function syncRepository(name: string, force = false): Promise<void>
 
   // Remove metadata for tags that no longer exist in the registry
   if (tags.length > 0) {
+    log(`syncRepository(${name}): pruning imageMetadata rows not in current tag list`)
     await db
       .delete(imageMetadata)
       .where(and(eq(imageMetadata.repository, name), notInArray(imageMetadata.tag, tags)))
   } else {
+    log(`syncRepository(${name}): no tags in registry, clearing all imageMetadata rows`)
     await db.delete(imageMetadata).where(eq(imageMetadata.repository, name))
   }
 
   // Upsert repository row with fresh tag count + size
+  log(`syncRepository(${name}): updating repository row (tagCount=${tags.length} sizeBytes=${totalSize})`)
   await db
     .insert(repositories)
     .values({
@@ -187,17 +226,24 @@ export async function syncRepository(name: string, force = false): Promise<void>
       target: repositories.name,
       set: { tagCount: tags.length, sizeBytes: totalSize, lastSyncedAt: new Date() },
     })
+
+  log(`syncRepository(${name}): done`)
 }
 
 /** Full sync: all repos + their tags. Can be slow for large registries. */
 export async function syncAll(force = false): Promise<void> {
+  log(`syncAll: start (force=${force})`)
   const names = await listRepositories()
+  log(`syncAll: registry returned ${names.length} repos`)
   if (names.length > 0) {
+    log(`syncAll: pruning deleted repos, seeding new ones`)
     await db.delete(repositories).where(notInArray(repositories.name, names))
     await db
       .insert(repositories)
       .values(names.map((name) => ({ name, visibility: "private", lastSyncedAt: new Date(0) })))
       .onConflictDoNothing()
+    log(`syncAll: syncing ${names.length} repos in parallel`)
+    await Promise.allSettled(names.map((name) => syncRepository(name, force)))
   }
-  await Promise.allSettled(names.map((name) => syncRepository(name, force)))
+  log("syncAll: done")
 }

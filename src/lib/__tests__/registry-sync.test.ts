@@ -50,7 +50,7 @@ vi.mock("@/lib/db", () => ({
 }))
 
 vi.mock("@/lib/schema", () => ({
-  repositories: { name: "name", lastSyncedAt: "last_synced_at" },
+  repositories: { name: "name", lastSyncedAt: "last_synced_at", tagCount: "tag_count" },
   imageMetadata: { repository: "repository", tag: "tag" },
 }))
 
@@ -72,6 +72,11 @@ function mockManifestHeaders() {
       return null
     },
   }
+}
+
+/** Returns a mock limit value suitable for a fresh (not-stale) repo with matching counts. */
+function freshRepoLimit(tagCount = 0) {
+  return [{ lastSyncedAt: new Date(Date.now() - 1000), tagCount, value: tagCount }]
 }
 
 describe("contentTypeMediaTypeFromGet", () => {
@@ -138,17 +143,58 @@ describe("syncRepositories", () => {
 })
 
 describe("syncRepository", () => {
-  it("returns early when repo is not stale (synced recently)", async () => {
-    // lastSyncedAt = 1 second ago → not stale
-    mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - 1000) }])
+  it("returns early when repo is not stale and DB count matches tagCount", async () => {
+    // lastSyncedAt = 1 second ago → not stale; tagCount=0, DB count=0 → match → skip
+    mockLimit.mockResolvedValue(freshRepoLimit(0))
     await syncRepository("myrepo")
     expect(mockListTags).not.toHaveBeenCalled()
-    expect(mockSelect).toHaveBeenCalledWith(expect.objectContaining({ lastSyncedAt: expect.anything() }))
+    // two selects: stale check + count check
+    expect(mockSelect).toHaveBeenCalledTimes(2)
+    expect(mockSelect).toHaveBeenNthCalledWith(1, expect.objectContaining({ lastSyncedAt: expect.anything() }))
+  })
+
+  it("re-syncs when repo is fresh but DB count is less than tagCount (rows deleted from DB)", async () => {
+    // fresh repo claims tagCount=3, but DB count returns 1 → mismatch → sync
+    mockLimit
+      .mockResolvedValueOnce([{ lastSyncedAt: new Date(Date.now() - 1000), tagCount: 3 }]) // stale check
+      .mockResolvedValueOnce([{ value: 1 }]) // count check
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    expect(mockListTags).toHaveBeenCalledWith("myrepo")
+  })
+
+  it("treats null tagCount as 0 when checking DB count (DB count matches → skip)", async () => {
+    // tagCount=null in DB row → knownCount=0; DB returns 0 rows → match → skip
+    mockLimit
+      .mockResolvedValueOnce([{ lastSyncedAt: new Date(Date.now() - 1000), tagCount: null }])
+      .mockResolvedValueOnce([{ value: 0 }])
+    await syncRepository("myrepo")
+    expect(mockListTags).not.toHaveBeenCalled()
+  })
+
+  it("treats null tagCount as 0 when checking DB count (DB count mismatch → sync)", async () => {
+    // tagCount=null → knownCount=0; DB returns 2 rows → mismatch → sync
+    mockLimit
+      .mockResolvedValueOnce([{ lastSyncedAt: new Date(Date.now() - 1000), tagCount: null }])
+      .mockResolvedValueOnce([{ value: 2 }])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    expect(mockListTags).toHaveBeenCalledWith("myrepo")
+  })
+
+  it("re-syncs when repo is fresh but DB count is greater than tagCount", async () => {
+    // tagCount=0 (empty sync was last run), but DB has 2 stale rows → mismatch → sync
+    mockLimit
+      .mockResolvedValueOnce([{ lastSyncedAt: new Date(Date.now() - 1000), tagCount: 0 }])
+      .mockResolvedValueOnce([{ value: 2 }])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo")
+    expect(mockListTags).toHaveBeenCalledWith("myrepo")
   })
 
   it("force=true skips stale check and syncs immediately", async () => {
     // Repo was synced 1 second ago — would normally skip
-    mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - 1000) }])
+    mockLimit.mockResolvedValue(freshRepoLimit(0))
     mockListTags.mockResolvedValue([])
     await syncRepository("myrepo", true)
     expect(mockSelect).not.toHaveBeenCalled()
@@ -192,7 +238,7 @@ describe("syncRepository", () => {
     expect(mockInsert).toHaveBeenCalled()
     const lastCall = (mockValues as any).mock.calls[(mockValues as any).mock.calls.length - 1][0] as any
     expect(lastCall).toMatchObject({ name: "myrepo", tagCount: 0, sizeBytes: 0 })
-    
+
     expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         target: "name",
@@ -200,8 +246,8 @@ describe("syncRepository", () => {
           tagCount: 0,
           sizeBytes: 0,
           lastSyncedAt: expect.any(Date),
-        })
-      })
+        }),
+      }),
     )
   })
 
@@ -246,7 +292,7 @@ describe("syncRepository", () => {
     })
     const repoCall = (mockValues as any).mock.calls[1][0] as any
     expect(repoCall).toMatchObject({ name: "myrepo", tagCount: 1, sizeBytes: 300 })
-    
+
     // Verify onConflictDoUpdate for imageMetadata
     expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -258,10 +304,10 @@ describe("syncRepository", () => {
           architecture: expect.anything(),
           createdAt: expect.anything(),
           lastSyncedAt: expect.anything(),
-        })
-      })
+        }),
+      }),
     )
-    
+
     const updateCall = mockOnConflictDoUpdate.mock.calls[0][0]
     const setStr = JSON.stringify(updateCall.set)
     expect(setStr).toContain("excluded.digest")
@@ -608,21 +654,27 @@ describe("syncRepository", () => {
 
 describe("syncAll", () => {
   it("calls syncRepository for each repo from registry", async () => {
-    // First call (in syncAll) → listRepositories
-    // syncAll calls listRepositories once, then syncRepository for each
-    // syncRepository calls db.select for stale check
     mockListRepositories.mockResolvedValue(["r1", "r2"])
-    // Make repos appear recently synced so syncRepository exits early
-    mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - 1000) }])
+    // fresh repos: tagCount=0, value=0 → counts match → each syncRepository exits early
+    mockLimit.mockResolvedValue(freshRepoLimit(0))
     await syncAll()
     expect(mockListRepositories).toHaveBeenCalledTimes(1)
-    // syncRepository was called for r1 and r2, each called db.select
-    expect(mockSelect).toHaveBeenCalledTimes(2)
+    // each syncRepository (r1, r2) makes 2 selects: stale check + count check = 4 total
+    expect(mockSelect).toHaveBeenCalledTimes(4)
   })
 
   it("does nothing when registry empty", async () => {
     mockListRepositories.mockResolvedValue([])
     await syncAll()
     expect(mockSelect).not.toHaveBeenCalled()
+  })
+
+  it("force=true skips staleness check for all repos", async () => {
+    mockListRepositories.mockResolvedValue(["r1", "r2"])
+    mockListTags.mockResolvedValue([])
+    await syncAll(true)
+    // force=true → no stale/count selects
+    expect(mockSelect).not.toHaveBeenCalled()
+    expect(mockListTags).toHaveBeenCalledTimes(2)
   })
 })
