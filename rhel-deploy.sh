@@ -56,13 +56,14 @@ mkdir -p "$PODMAN_DIR"
 # Copy all the *.container, *.pod, *.volume, and deploy.sh files
 for f in "$PODMAN_DIR"/*.container "$PODMAN_DIR"/*.pod "$PODMAN_DIR"/*.volume "$PODMAN_DIR"/deploy.sh; do
     [[ -e "$f" ]] || continue
-    cp -f "$f" "$TARGET_DIR/podman/${{f##*/}}"
+    cp -f "$f" "$TARGET_DIR/podman/${f##*/}"
 done
 
 chmod +x "$TARGET_DIR/podman/deploy.sh"
 
 # Run the real deploy script
 echo 'Starting podman deployment…'
+# Running as root; sudo is harmless
 sudo "$TARGET_DIR/podman/deploy.sh"
 
 echo 'Deployment finished. Check systemctl status for services.'
