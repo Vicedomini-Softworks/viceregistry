@@ -2,7 +2,7 @@ import { db } from "./db"
 import { repositories, imageMetadata } from "./schema"
 import { listRepositories, listTags, getManifest, getJsonBlob } from "./registry-client"
 import { parseConfigBlob, resolveToImageManifest } from "./registry-manifest"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, notInArray, sql } from "drizzle-orm"
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -23,34 +23,37 @@ export async function syncRepositories(): Promise<void> {
   const names = await listRepositories()
   if (names.length === 0) return
 
+  // Remove repos that no longer exist in the registry
+  await db.delete(repositories).where(notInArray(repositories.name, names))
+
+  // Insert new repos with epoch lastSyncedAt so syncRepository treats them as immediately stale
   await db
     .insert(repositories)
     .values(
       names.map((name) => ({
         name,
         visibility: "private",
-        lastSyncedAt: new Date(),
+        lastSyncedAt: new Date(0),
       })),
     )
-    .onConflictDoUpdate({
-      target: repositories.name,
-      set: { lastSyncedAt: new Date() },
-    })
+    .onConflictDoNothing()
 }
 
 /**
  * Sync tags + manifests for a single repository → PG.
- * Only syncs if the repo entry is stale or missing.
+ * Only syncs if the repo entry is stale or missing, unless force=true.
  * Resolves OCI / Docker v2 manifest lists, fetches config blobs for labels and os/arch/created.
  */
-export async function syncRepository(name: string): Promise<void> {
-  const [existing] = await db
-    .select({ lastSyncedAt: repositories.lastSyncedAt })
-    .from(repositories)
-    .where(eq(repositories.name, name))
-    .limit(1)
+export async function syncRepository(name: string, force = false): Promise<void> {
+  if (!force) {
+    const [existing] = await db
+      .select({ lastSyncedAt: repositories.lastSyncedAt })
+      .from(repositories)
+      .where(eq(repositories.name, name))
+      .limit(1)
 
-  if (!isStale(existing?.lastSyncedAt)) return
+    if (!isStale(existing?.lastSyncedAt)) return
+  }
 
   const tags = await listTags(name)
 
@@ -154,6 +157,15 @@ export async function syncRepository(name: string): Promise<void> {
       })
   }
 
+  // Remove metadata for tags that no longer exist in the registry
+  if (tags.length > 0) {
+    await db
+      .delete(imageMetadata)
+      .where(and(eq(imageMetadata.repository, name), notInArray(imageMetadata.tag, tags)))
+  } else {
+    await db.delete(imageMetadata).where(eq(imageMetadata.repository, name))
+  }
+
   // Upsert repository row with fresh tag count + size
   await db
     .insert(repositories)
@@ -171,7 +183,8 @@ export async function syncRepository(name: string): Promise<void> {
 }
 
 /** Full sync: all repos + their tags. Can be slow for large registries. */
-export async function syncAll(): Promise<void> {
+export async function syncAll(force = false): Promise<void> {
+  await syncRepositories()
   const names = await listRepositories()
-  await Promise.allSettled(names.map((name) => syncRepository(name)))
+  await Promise.allSettled(names.map((name) => syncRepository(name, force)))
 }

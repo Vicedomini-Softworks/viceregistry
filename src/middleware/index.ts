@@ -15,7 +15,7 @@ const PUBLIC_ROUTES = [
   "/api/search",
 ]
 
-const ADMIN_PREFIXES = ["/admin", "/api/users"]
+const ADMIN_PREFIXES = ["/admin", "/api/users", "/api/admin"]
 
 export const onRequest: MiddlewareHandler = async (context: APIContext, next: MiddlewareNext) => {
   const { pathname } = context.url

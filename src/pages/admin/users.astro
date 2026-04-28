@@ -2,6 +2,7 @@
 export const prerender = false
 import AppLayout from "@/layouts/app.astro"
 import UserTable from "@/components/admin/UserTable"
+import SyncButton from "@/components/admin/SyncButton"
 import { Button } from "@/components/ui/button"
 import { db } from "@/lib/db"
 import { users, userRoles, roles } from "@/lib/schema"
@@ -50,9 +51,12 @@ const currentUserId = user.sub
         <h1 class="text-2xl font-semibold">Users</h1>
         <p class="text-sm text-muted-foreground mt-1">{usersWithRoles.length} user{usersWithRoles.length === 1 ? "" : "s"}</p>
       </div>
-      <Button asChild>
-        <a href="/admin/users/new">New user</a>
-      </Button>
+      <div class="flex gap-2">
+        <SyncButton client:load />
+        <Button asChild>
+          <a href="/admin/users/new">New user</a>
+        </Button>
+      </div>
     </div>
     <UserTable client:load users={usersWithRoles} currentUserId={currentUserId} />
   </div>

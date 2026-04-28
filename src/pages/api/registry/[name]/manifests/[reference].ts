@@ -1,5 +1,8 @@
 import type { APIRoute } from "astro"
 import { getManifest, getManifestDigest, deleteManifest } from "@/lib/registry-client"
+import { db } from "@/lib/db"
+import { imageMetadata, repositories } from "@/lib/schema"
+import { and, eq, sql } from "drizzle-orm"
 
 export const GET: APIRoute = async ({ params }) => {
   const { name, reference } = params
@@ -38,6 +41,27 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
   if (!res.ok && res.status !== 202) {
     return Response.json({ error: "Failed to delete manifest" }, { status: res.status })
   }
+
+  // Clean PG cache: remove the deleted tag's metadata row
+  if (reference.startsWith("sha256:")) {
+    await db
+      .delete(imageMetadata)
+      .where(and(eq(imageMetadata.repository, name), eq(imageMetadata.digest, reference)))
+  } else {
+    await db
+      .delete(imageMetadata)
+      .where(and(eq(imageMetadata.repository, name), eq(imageMetadata.tag, reference)))
+  }
+
+  // Update cached tag count
+  const [{ count }] = await db
+    .select({ count: sql<number>`cast(count(*) as int)` })
+    .from(imageMetadata)
+    .where(eq(imageMetadata.repository, name))
+  await db
+    .update(repositories)
+    .set({ tagCount: count })
+    .where(eq(repositories.name, name))
 
   return Response.json({ ok: true })
 }
