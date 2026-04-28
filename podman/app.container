@@ -8,6 +8,8 @@ ContainerName=viceregistry-app
 Pod=viceregistry.pod
 
 EnvironmentFile=/etc/viceregistry/.env
+Environment=REGISTRY_TOKEN_PRIVATE_KEY_FILE=/certs/token.key
+Volume=/etc/viceregistry/certs:/certs:ro,Z
 StartWithPod=true
 
 [Service]

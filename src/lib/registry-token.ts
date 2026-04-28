@@ -1,5 +1,6 @@
 import { SignJWT, importPKCS8 } from "jose"
 import { createPrivateKey, createPublicKey, createHash } from "crypto"
+import { readFileSync } from "fs"
 import { db } from "@/lib/db"
 import { organizations, organizationRepositories, organizationMembers, userRepositoryPermissions, users } from "@/lib/schema"
 import { eq, and } from "drizzle-orm"
@@ -45,10 +46,16 @@ export function splitCommaScopeActions(actionsStr: string): string[] {
 }
 
 export async function issueRegistryToken(claims: TokenClaims): Promise<string> {
-  const rawKey = process.env.REGISTRY_TOKEN_PRIVATE_KEY
-  if (!rawKey) throw new Error("REGISTRY_TOKEN_PRIVATE_KEY env var is required")
-  // Stryker disable next-line StringLiteral: PEM line breaks are real newlines (0x0a), not empty
-  const privateKeyPem = rawKey.replace(/\\n/g, "\n")
+  let privateKeyPem: string
+  const keyFile = process.env.REGISTRY_TOKEN_PRIVATE_KEY_FILE
+  if (keyFile) {
+    privateKeyPem = readFileSync(keyFile, "utf8")
+  } else {
+    const rawKey = process.env.REGISTRY_TOKEN_PRIVATE_KEY
+    if (!rawKey) throw new Error("REGISTRY_TOKEN_PRIVATE_KEY_FILE or REGISTRY_TOKEN_PRIVATE_KEY env var required")
+    // Stryker disable next-line StringLiteral: PEM line breaks are real newlines (0x0a), not empty
+    privateKeyPem = rawKey.replace(/\\n/g, "\n")
+  }
   const privateKey = await importPKCS8(privateKeyPem, "RS256")
 
   const access = parseScopeToAccess(claims.scope)
