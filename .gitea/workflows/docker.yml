@@ -7,8 +7,8 @@ on:
 
 env:
   # TODO: Change to your Gitea instance domain (e.g., git.example.com)
-  REGISTRY: git.yourdomain.com
-  IMAGE_NAME: ${{ gitea.repository }}
+  REGISTRY: registry.vicedomini.ltd
+  IMAGE_NAME: vicedomini-softworks/viceregistry
 
 jobs:
   build:
@@ -35,7 +35,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
-            type=sha,format=short,prefix=
+            type=sha,format=short
 
       - name: Build and push
         uses: docker/build-push-action@v5
