@@ -19,6 +19,8 @@ import type { TagRowData, PermissionRow } from "@/lib/repository-page-data"
 import type { RepositoryOverviewResult } from "@/lib/repository-overview"
 import { Shield, Trash2, UserPlus, Pencil, FileText } from "lucide-react"
 import { toast } from "sonner"
+import { PromptDialog } from "@/components/ui/prompt-dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 
 type Visibility = "public" | "private"
 
@@ -58,6 +60,32 @@ export default function RepositoryHubView({
   const [editOpen, setEditOpen] = useState(false)
   const [editText, setEditText] = useState(initialMd ?? "")
   const [saving, setSaving] = useState(false)
+  const [promptOpen, setPromptOpen] = useState(false)
+  const [promptTitle, setPromptTitle] = useState("")
+  const [promptDefault, setPromptDefault] = useState("")
+  const [promptPlaceholder, setPromptPlaceholder] = useState("")
+  const [promptResolve, setPromptResolve] = useState<(value: string) => void>(() => () => {})
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmMessage, setConfirmMessage] = useState("")
+  const [confirmResolve, setConfirmResolve] = useState<(value: boolean) => void>(() => () => {})
+
+  function showPrompt(title: string, defaultValue = "", placeholder = ""): Promise<string> {
+    return new Promise((resolve) => {
+      setPromptTitle(title)
+      setPromptDefault(defaultValue)
+      setPromptPlaceholder(placeholder)
+      setPromptResolve(() => resolve)
+      setPromptOpen(true)
+    })
+  }
+
+  function showConfirm(message: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      setConfirmMessage(message)
+      setConfirmResolve(() => resolve)
+      setConfirmOpen(true)
+    })
+  }
 
   const pull = `docker pull ${registryHost}/${name}`
 
@@ -207,34 +235,34 @@ export default function RepositoryHubView({
                   </CardTitle>
                   <CardDescription>Direct user access to this repository</CardDescription>
                 </div>
-                <Button
-                  size="sm"
-                  type="button"
-                  onClick={async () => {
-                    const username = window.prompt("Enter username:")
-                    if (!username) return
-                    const permission = window.prompt("Enter permission (pull, push, admin):", "pull")
-                    if (!permission) return
-                    try {
-                      const res = await fetch(apiRepoPath(repositoryUrlPath) + "/permissions", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ username, permission }),
-                      })
-                      if (!res.ok) {
-                        const err = await res.json()
-                        throw new Error(err.error || "Failed")
+                  <Button
+                    size="sm"
+                    type="button"
+                    onClick={async () => {
+                      const username = await showPrompt("Enter username:")
+                      if (!username) return
+                      const permission = await showPrompt("Enter permission (pull, push, admin):", "pull")
+                      if (!permission) return
+                      try {
+                        const res = await fetch(apiRepoPath(repositoryUrlPath) + "/permissions", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ username, permission }),
+                        })
+                        if (!res.ok) {
+                          const err = await res.json()
+                          throw new Error(err.error || "Failed")
+                        }
+                        toast.success("Permission added")
+                        window.location.reload()
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Error")
                       }
-                      toast.success("Permission added")
-                      window.location.reload()
-                    } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "Error")
-                    }
-                  }}
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add user
-                </Button>
+                    }}
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Add user
+                  </Button>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col divide-y rounded-md border">
@@ -254,7 +282,8 @@ export default function RepositoryHubView({
                             className="h-8 w-8 text-destructive"
                             type="button"
                             onClick={async () => {
-                              if (!window.confirm("Remove this permission?")) return
+                              const confirmed = await showConfirm("Remove this permission?")
+                              if (!confirmed) return
                               try {
                                 const res = await fetch(
                                   apiRepoPath(repositoryUrlPath) + "/permissions?userId=" + encodeURIComponent(p.userId),
@@ -306,6 +335,38 @@ export default function RepositoryHubView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PromptDialog
+        open={promptOpen}
+        onOpenChange={setPromptOpen}
+        title={promptTitle}
+        defaultValue={promptDefault}
+        placeholder={promptPlaceholder}
+        onSubmit={(value) => {
+          setPromptOpen(false)
+          promptResolve(value)
+        }}
+      />
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogDescription>{confirmMessage}</AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmOpen(false)
+                confirmResolve(true)
+              }}
+            >
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

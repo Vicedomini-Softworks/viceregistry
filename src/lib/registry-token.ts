@@ -104,7 +104,7 @@ export async function computeGrantedScope(
     }
   }
 
-  let isAdmin = roleNames.includes("admin")
+  let isAdmin = roleNames.includes("admin") || roleNames.includes("super admin")
   let canPush = isAdmin || roleNames.includes("push")
   let canPull = canPush || roleNames.includes("viewer")
 
