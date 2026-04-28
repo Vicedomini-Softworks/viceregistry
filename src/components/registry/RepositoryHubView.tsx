@@ -102,6 +102,7 @@ export default function RepositoryHubView({
       }
       setRepoVisibility(visibility)
       toast.success(visibility === "public" ? "Repository is public in the catalog" : "Repository is private in the catalog")
+      setTimeout(() => window.location.reload(), 1500)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error")
     }

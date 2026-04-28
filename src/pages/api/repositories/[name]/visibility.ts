@@ -2,6 +2,7 @@ import type { APIRoute } from "astro"
 import { db } from "@/lib/db"
 import { repositories, userRepositoryPermissions } from "@/lib/schema"
 import { eq, and } from "drizzle-orm"
+import { syncRepository } from "@/lib/registry-sync"
 
 const VIS = new Set(["public", "private"])
 
@@ -48,6 +49,8 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     .returning({ name: repositories.name })
 
   if (result.length === 0) return Response.json({ error: "Repository not found" }, { status: 404 })
+
+  syncRepository(repositoryName).catch((e) => console.error("Repo sync failed:", e))
 
   return Response.json({ ok: true, visibility: vis })
 }

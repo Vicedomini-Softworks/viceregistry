@@ -16,8 +16,10 @@ export default function PullCommand({ command }: Props) {
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2 font-mono text-sm">
-      <span className="flex-1 text-muted-foreground">{command}</span>
+    <div className="relative flex items-center gap-2 rounded-md border bg-muted px-3 py-2 font-mono text-sm overflow-hidden">
+      <div className="flex-1 overflow-x-auto whitespace-nowrap scrollbar-hide">
+        <span className="text-muted-foreground">{command}</span>
+      </div>
       <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={handleCopy}>
         {copied ? (
           <Check className="h-3 w-3 text-green-500" />
