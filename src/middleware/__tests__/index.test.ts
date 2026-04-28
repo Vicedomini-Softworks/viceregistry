@@ -84,7 +84,7 @@ describe("middleware", () => {
     })
 
     it("clears cookie on invalid session token on public route", async () => {
-      const { ctx, cookieDelete } = makeCtx("/dashboard", {
+      const { ctx, cookieDelete } = makeCtx("/", {
         sessionToken: "bad.tok.en",
         sessionValid: false,
       })
