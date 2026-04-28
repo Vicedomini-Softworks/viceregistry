@@ -1,4 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+
+const { mockIssueRegistryToken } = vi.hoisted(() => {
+  const mockIssueRegistryToken = vi.fn().mockResolvedValue("mocked-registry-token")
+  return { mockIssueRegistryToken }
+})
+
+vi.mock("@/lib/registry-token", () => ({
+  issueRegistryToken: mockIssueRegistryToken,
+}))
+
 import {
   listRepositories,
   listTags,
@@ -12,18 +22,40 @@ import {
   parseContentLengthHeader,
 } from "@/lib/registry-client"
 
-function mockFetch(ok: boolean, body: unknown, headers: Record<string, string> = {}) {
+function mockFetch(
+  ok: boolean,
+  body: unknown,
+  headers: Record<string, string> = {},
+  status?: number,
+) {
+  const normalized: Record<string, string> = {}
+  for (const [k, v] of Object.entries(headers)) normalized[k.toLowerCase()] = v
+
   const jsonMock = vi.fn().mockImplementation(async () => {
     if (!ok) throw new Error("Should not call json() on non-ok response")
     return body
   })
   return vi.fn().mockResolvedValue({
     ok,
+    status: status ?? (ok ? 200 : 400),
     json: jsonMock,
     headers: {
-      get: (key: string) => headers[key] ?? null,
+      get: (key: string) => normalized[key.toLowerCase()] ?? null,
     },
   })
+}
+
+function make401(scope: string) {
+  return {
+    ok: false,
+    status: 401,
+    headers: {
+      get: (k: string) =>
+        k.toLowerCase() === "www-authenticate"
+          ? `Bearer realm="http://localhost:4321/api/auth/token",service="registry.local",scope="${scope}"`
+          : null,
+    },
+  }
 }
 
 describe("parseContentLengthHeader", () => {
@@ -47,8 +79,10 @@ describe("parseContentLengthHeader", () => {
 
 describe("registry-client", () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     vi.unstubAllEnvs()
     vi.stubEnv("REGISTRY_URL", "http://registry:5000")
+    mockIssueRegistryToken.mockResolvedValue("mocked-registry-token")
   })
 
   describe("default REGISTRY_URL", () => {
@@ -371,6 +405,139 @@ describe("registry-client", () => {
           "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json",
         "X-Custom": "1",
       })
+    })
+  })
+
+  describe("401 Bearer auth retry", () => {
+    it("retries with Bearer token and returns data on success", async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(make401("registry:catalog:*"))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ repositories: ["repo1", "repo2"] }),
+          headers: { get: () => null },
+        })
+      vi.stubGlobal("fetch", fetchMock)
+
+      const result = await listRepositories()
+
+      expect(result).toEqual(["repo1", "repo2"])
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      const [, retryOpts] = fetchMock.mock.calls[1]
+      expect(retryOpts.headers["Authorization"]).toBe("Bearer mocked-registry-token")
+    })
+
+    it("issues token scoped to the WWW-Authenticate challenge", async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(make401("repository:myrepo:pull"))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ tags: ["v1"] }),
+          headers: { get: () => null },
+        })
+      vi.stubGlobal("fetch", fetchMock)
+
+      await listTags("myrepo")
+
+      expect(mockIssueRegistryToken).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "repository:myrepo:pull" }),
+      )
+    })
+
+    it("does not retry when 401 has no www-authenticate header", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        headers: { get: () => null },
+      })
+      vi.stubGlobal("fetch", fetchMock)
+
+      const result = await listRepositories()
+
+      expect(result).toEqual([])
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not retry when www-authenticate has no scope", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        headers: {
+          get: (k: string) =>
+            k.toLowerCase() === "www-authenticate"
+              ? `Bearer realm="http://localhost:4321/api/auth/token",service="registry.local"`
+              : null,
+        },
+      })
+      vi.stubGlobal("fetch", fetchMock)
+
+      const result = await listRepositories()
+
+      expect(result).toEqual([])
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("returns empty/null when retry also fails", async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(make401("registry:catalog:*"))
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 403,
+          headers: { get: () => null },
+          json: async () => ({}),
+        })
+      vi.stubGlobal("fetch", fetchMock)
+
+      const result = await listRepositories()
+
+      expect(result).toEqual([])
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it("does not retry non-401 failures", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        headers: { get: () => null },
+      })
+      vi.stubGlobal("fetch", fetchMock)
+
+      await listRepositories()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not retry when issueRegistryToken throws", async () => {
+      mockIssueRegistryToken.mockRejectedValueOnce(new Error("key not configured"))
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(make401("registry:catalog:unique-throw-scope"))
+      vi.stubGlobal("fetch", fetchMock)
+
+      const result = await listRepositories()
+
+      expect(result).toEqual([])
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("passes Bearer token to getJsonBlob on 401", async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(make401("repository:ns/r:pull"))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          arrayBuffer: async () => new TextEncoder().encode('{"os":"linux"}').buffer,
+        })
+      vi.stubGlobal("fetch", fetchMock)
+
+      const result = await getJsonBlob("ns/r", "sha256:abc")
+
+      expect(result).toEqual({ os: "linux" })
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      const [, retryOpts] = fetchMock.mock.calls[1]
+      expect(retryOpts.headers["Authorization"]).toBe("Bearer mocked-registry-token")
     })
   })
 })
