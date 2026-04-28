@@ -164,8 +164,44 @@ for i in $(seq 30); do
   fi
   echo -n "."
   sleep 3
-  [[ $i -lt 30 ]] || { echo; echo "  ⚠ App not healthy yet — check: journalctl -u app.service"; }
+  [[ $i -lt 30 ]] || { echo; die "App failed to become healthy after 90s — check: journalctl -u app.service"; }
 done
+
+# ── Verify pod and ports ──────────────────────────────────────────────────────
+info "Verifying deployment"
+debug "Checking pod is running..."
+if ! podman pod inspect viceregistry &>/dev/null; then
+  die "Pod 'viceregistry' not found — check Quadlet configuration in $QUADLET_DIR"
+fi
+debug "Pod 'viceregistry' is running"
+
+debug "Checking exposed ports..."
+if ! ss -tlnp | grep -q ":4321 "; then
+  die "Port 4321 not listening — pod may have failed to start"
+fi
+debug "  ✓ Port 4321 listening"
+
+if ! ss -tlnp | grep -q ":5000 "; then
+  die "Port 5000 not listening — pod may have failed to start"
+fi
+debug "  ✓ Port 5000 listening"
+
+# ── Firewall configuration ────────────────────────────────────────────────────
+if command -v firewall-cmd >/dev/null 2>&1; then
+  info "Configuring firewall"
+  if firewall-cmd --permanent --add-port=4321/tcp 2>/dev/null; then
+    debug "  ✓ Port 4321 added to firewall"
+  else
+    debug "  ⚠ Could not add port 4321 to firewall (may require manual configuration)"
+  fi
+  if firewall-cmd --permanent --add-port=5000/tcp 2>/dev/null; then
+    debug "  ✓ Port 5000 added to firewall"
+  else
+    debug "  ⚠ Could not add port 5000 to firewall (may require manual configuration)"
+  fi
+  firewall-cmd --reload >/dev/null 2>&1 || true
+  ok "Firewall configured"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 info "Deploy complete ✓"
