@@ -2,6 +2,7 @@
 import "@/styles/global.css"
 import Sidebar from "@/components/layout/Sidebar"
 import Topbar from "@/components/layout/Topbar"
+import { Toaster } from "@/components/ui/sonner"
 
 const { title = "ViceRegistry" } = Astro.props
 const user = Astro.locals.user
@@ -27,5 +28,6 @@ const user = Astro.locals.user
         <slot />
       </main>
     </div>
+    <Toaster client:load />
   </body>
 </html>
