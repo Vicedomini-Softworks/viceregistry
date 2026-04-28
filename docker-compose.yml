@@ -43,16 +43,12 @@ services:
     ports:
       - "5000:5000"
     environment:
-      # Token auth — delegate authentication to our app
       REGISTRY_AUTH: token
-      # IMPORTANT: this must be the URL reachable by Docker clients (not internal)
-      # Override with your public app URL in production
       REGISTRY_AUTH_TOKEN_REALM: http://localhost:4321/api/auth/token
       REGISTRY_AUTH_TOKEN_SERVICE: registry.local
       REGISTRY_AUTH_TOKEN_ISSUER: viceregistry
       REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /certs/token.crt
-      REGISTRY_TOKEN_PUBLIC_KEY: ${REGISTRY_TOKEN_PUBLIC_KEY}
-      # S3 storage via MinIO (local dev)
+      REGISTRY_TOKEN_PUBLIC_KEY_FILE: /certs/token.crt
       REGISTRY_STORAGE: s3
       REGISTRY_STORAGE_S3_ACCESSKEY: minioadmin
       REGISTRY_STORAGE_S3_SECRETKEY: minioadmin
@@ -62,8 +58,8 @@ services:
       REGISTRY_STORAGE_S3_FORCEPATHSTYLE: "true"
       REGISTRY_STORAGE_DELETE_ENABLED: "true"
       REGISTRY_LOG_LEVEL: warn
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["mkdir -p /certs && printf \"%b\\n\" \"$$REGISTRY_TOKEN_PUBLIC_KEY\" > /certs/token.crt && exec /entrypoint.sh /etc/docker/registry/config.yml"]
+    volumes:
+      - ./keys/registry-token.crt:/certs/token.crt:ro
     depends_on:
       minio:
         condition: service_healthy
