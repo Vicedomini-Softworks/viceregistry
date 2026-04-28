@@ -71,6 +71,13 @@
       "when": 1777125200000,
       "tag": "0009_private_repository_default",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777398056218,
+      "tag": "0010_confused_smiling_tiger",
+      "breakpoints": true
     }
   ]
 }

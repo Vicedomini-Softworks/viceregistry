@@ -160,3 +160,15 @@ export const webauthnCredentials = pgTable("webauthn_credentials", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
 })
+
+export const downloads = pgTable("downloads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  repository: text("repository").notNull(),
+  tag: text("tag"),
+  digest: text("digest"),
+  action: text("action").notNull(), // 'pull', 'push', 'delete'
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+})

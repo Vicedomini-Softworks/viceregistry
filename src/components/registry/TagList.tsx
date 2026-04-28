@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Table,
   TableBody,
@@ -20,6 +20,10 @@ interface TagRow {
   architecture: string | null
 }
 
+interface DownloadStats {
+  [tag: string]: number
+}
+
 interface Props {
   name: string
   tags: TagRow[]
@@ -36,6 +40,20 @@ function formatBytes(bytes: number | null): string {
 
 export default function TagList({ name, tags: initialTags, registryHost, isAdmin }: Props) {
   const [tags, setTags] = useState(initialTags)
+  const [downloads, setDownloads] = useState<DownloadStats>({})
+
+  useEffect(() => {
+    fetch(`/api/analytics/downloads?repository=${encodeURIComponent(name)}&groupBy=tag`)
+      .then((r) => r.json())
+      .then((data) => {
+        const stats: DownloadStats = {}
+        for (const d of data.downloads ?? []) {
+          if (d.tag) stats[d.tag] = d.count
+        }
+        setDownloads(stats)
+      })
+      .catch(console.error)
+  }, [name])
 
   const handleDeleted = (deletedTag: string) => {
     setTags((prev) => prev.filter((t) => t.tag !== deletedTag))
@@ -63,6 +81,7 @@ export default function TagList({ name, tags: initialTags, registryHost, isAdmin
               <TableHead className="w-20">OS</TableHead>
               <TableHead className="w-24">Arch</TableHead>
               <TableHead className="w-28 text-right">Size</TableHead>
+              <TableHead className="w-20 text-right">Downloads</TableHead>
               <TableHead>Pull command</TableHead>
               {isAdmin && <TableHead className="w-12"></TableHead>}
             </TableRow>
@@ -82,6 +101,9 @@ export default function TagList({ name, tags: initialTags, registryHost, isAdmin
                 <TableCell className="text-sm text-muted-foreground">{row.architecture ?? "—"}</TableCell>
                 <TableCell className="text-right tabular-nums text-sm text-muted-foreground">
                   {formatBytes(row.totalSize)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-sm text-muted-foreground">
+                  {downloads[row.tag] ?? 0}
                 </TableCell>
                 <TableCell className="max-w-xs">
                   <PullCommand command={`docker pull ${registryHost}/${name}:${row.tag}`} />

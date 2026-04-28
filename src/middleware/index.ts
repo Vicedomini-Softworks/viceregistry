@@ -13,6 +13,8 @@ const PUBLIC_ROUTES = [
   "/api/auth/webauthn/verify-authentication",
   "/api/health",
   "/api/search",
+  "/api/analytics/registry-event",
+  "/api/analytics/track",
 ]
 
 const ADMIN_PREFIXES = ["/admin", "/api/users", "/api/admin"]

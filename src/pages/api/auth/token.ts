@@ -13,6 +13,7 @@ import {
 import { issueRegistryToken, computeGrantedScope } from "@/lib/registry-token"
 import { eq, and } from "drizzle-orm"
 import bcrypt from "bcryptjs"
+import { writeAuditLog } from "@/lib/audit"
 
 function parseRepositoryNameFromScope(scope: string): string | null {
   const parts = scope.split(":")
@@ -27,6 +28,13 @@ function hasPushInScope(scope: string): boolean {
   if (parts.length < 3) return false
   const actions = parts[2]?.split(",") ?? []
   return actions.includes("push")
+}
+
+function hasPullInScope(scope: string): boolean {
+  const parts = scope.split(":")
+  if (parts.length < 3) return false
+  const actions = parts[2]?.split(",") ?? []
+  return actions.includes("pull")
 }
 
 async function assignRepositoryOwner(repositoryName: string, userId: string, username: string) {
