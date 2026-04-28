@@ -52,13 +52,17 @@ async function registryFetch(path: string, options?: RequestInit) {
   }
 
   const res = await fetch(url, { ...options, headers })
+  console.log(`[registry-client] ${options?.method ?? "GET"} ${url} → ${res.status}`)
 
   // Docker Registry v2 token auth: on 401, obtain a Bearer token and retry once
   if (res.status === 401) {
-    const token = await resolveBearerChallenge(res.headers.get("www-authenticate"))
+    const wwwAuth = res.headers.get("www-authenticate")
+    console.log(`[registry-client] 401 www-authenticate: ${wwwAuth}`)
+    const token = await resolveBearerChallenge(wwwAuth)
     if (token) {
       headers["Authorization"] = `Bearer ${token}`
       const retried = await fetch(url, { ...options, headers })
+      console.log(`[registry-client] retry → ${retried.status}`)
       if (!retried.ok) {
         console.error(`[registry-client] auth retry failed: ${retried.status} ${retried.statusText} for ${url}`)
       }
