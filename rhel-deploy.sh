@@ -56,23 +56,6 @@ mkdir -p "$PODMAN_DIR"
 # No copy needed: pods, containers, volumes, and deploy.sh are already
 # present in $TARGET_DIR/podman. The original podman/deploy.sh will install
 # the Quadlet units from there.
-# Copy unit files into the podman directory – overwriting existing ones with a warning
-chmod +x "$TARGET_DIR/podman/deploy.sh"
-
-for f in "$PODMAN_DIR"/*.container "$PODMAN_DIR"/*.pod "$PODMAN_DIR"/*.volume "$PODMAN_DIR"/deploy.sh; do
-    [[ -e "$f" ]] || continue
-    dst="$TARGET_DIR/podman/${f##*/}"
-    if [[ "$f" == "$dst" ]]; then
-        # same file – nothing to do
-        continue
-    fi
-    if [[ -e "$dst" ]]; then
-        echo "    Overwriting $dst"
-    fi
-    cp -f "$f" "$dst"
-    echo "    Copied ${f##*/} to $dst"
-
-done
 
 
 # Run the real deploy script
