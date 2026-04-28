@@ -7,7 +7,7 @@ import { eq, and } from "drizzle-orm"
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
-function base32Encode(buf: Buffer): string {
+export function base32Encode(buf: Buffer): string {
   let result = ""
   let bits = 0
   let value = 0

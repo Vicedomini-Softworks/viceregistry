@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest"
 import { generateKeyPair, exportPKCS8, importPKCS8, importSPKI, jwtVerify } from "jose"
-import { issueRegistryToken, computeGrantedScope, splitCommaScopeActions } from "@/lib/registry-token"
+import { issueRegistryToken, computeGrantedScope, splitCommaScopeActions, base32Encode } from "@/lib/registry-token"
+
+const { mockReadFileSync } = vi.hoisted(() => {
+  const mockReadFileSync = vi.fn()
+  return { mockReadFileSync }
+})
+
+vi.mock("fs", () => ({ readFileSync: mockReadFileSync }))
 
 const { mockSelect, mockLimit, mockWhere, mockFrom, mockInnerJoin, mockExecute } = vi.hoisted(() => {
   const mockExecute = vi.fn().mockResolvedValue([])
@@ -59,6 +66,21 @@ beforeAll(async () => {
   publicKey = pub as CryptoKey
 })
 
+describe("base32Encode", () => {
+  it("encodes a buffer whose bit length is a multiple of 5 (no leftover)", () => {
+    // 5 bytes = 40 bits, 40 / 5 = 8 chars, bits=0 after loop → leftover branch not taken
+    const result = base32Encode(Buffer.from([0x00, 0x00, 0x00, 0x00, 0x00]))
+    expect(result).toBe("AAAAAAAA")
+  })
+
+  it("encodes a buffer with leftover bits (bits > 0 branch)", () => {
+    // 1 byte = 8 bits: extracts one 5-bit group (bits=3 leftover) → branch fires
+    const result = base32Encode(Buffer.from([0b10000000]))
+    expect(result).toHaveLength(2)
+    expect(result[0]).toBe("Q") // top 5 bits of 0x80 = 10000 = 16 = 'Q'
+  })
+})
+
 describe("splitCommaScopeActions", () => {
   it("omits empty segments (but keeps valid comma-separated parts)", () => {
     expect(splitCommaScopeActions("pull,,push,")).toEqual(["pull", "push"])
@@ -80,6 +102,7 @@ beforeEach(() => {
   mockInnerJoin.mockClear()
   mockWhere.mockClear()
   mockLimit.mockClear()
+  mockReadFileSync.mockReset()
 })
 
 describe("issueRegistryToken", () => {
@@ -98,6 +121,16 @@ describe("issueRegistryToken", () => {
     await expect(
       issueRegistryToken({ subject: "alice", service: "svc", scope: "repository:r:pull" }),
     ).rejects.toThrow("REGISTRY_TOKEN_PRIVATE_KEY_FILE or REGISTRY_TOKEN_PRIVATE_KEY env var required")
+  })
+
+  it("reads private key from file when REGISTRY_TOKEN_PRIVATE_KEY_FILE is set", async () => {
+    vi.stubEnv("REGISTRY_TOKEN_PRIVATE_KEY_FILE", "/fake/key.pem")
+    vi.stubEnv("REGISTRY_TOKEN_PRIVATE_KEY", "")
+    mockReadFileSync.mockReturnValue(privatePem)
+    const token = await issueRegistryToken({ subject: "alice", service: "svc", scope: "" })
+    expect(typeof token).toBe("string")
+    expect(token.split(".")).toHaveLength(3)
+    expect(mockReadFileSync).toHaveBeenCalledWith("/fake/key.pem", "utf8")
   })
 
   it("produces access: [] for empty scope", async () => {

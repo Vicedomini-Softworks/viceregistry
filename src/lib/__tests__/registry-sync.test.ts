@@ -146,6 +146,15 @@ describe("syncRepository", () => {
     expect(mockSelect).toHaveBeenCalledWith(expect.objectContaining({ lastSyncedAt: expect.anything() }))
   })
 
+  it("force=true skips stale check and syncs immediately", async () => {
+    // Repo was synced 1 second ago — would normally skip
+    mockLimit.mockResolvedValue([{ lastSyncedAt: new Date(Date.now() - 1000) }])
+    mockListTags.mockResolvedValue([])
+    await syncRepository("myrepo", true)
+    expect(mockSelect).not.toHaveBeenCalled()
+    expect(mockListTags).toHaveBeenCalledWith("myrepo")
+  })
+
   it("syncs when lastSyncedAt is null (missing entry)", async () => {
     mockLimit.mockResolvedValue([{ lastSyncedAt: null }])
     mockListTags.mockResolvedValue([])
