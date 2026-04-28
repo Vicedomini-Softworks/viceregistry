@@ -2,8 +2,8 @@ import { verifySessionToken } from "@/lib/auth"
 import type { APIContext, MiddlewareHandler, MiddlewareNext } from "astro"
 
 const PUBLIC_ROUTES = [
+  "/",
   "/login",
-  "/dashboard",
   "/repository",
   "/r",
   "/image",
