@@ -2,7 +2,7 @@ import { db } from "./db"
 import { repositories, imageMetadata } from "./schema"
 import { listRepositories, listTags, getManifest, getJsonBlob } from "./registry-client"
 import { parseConfigBlob, resolveToImageManifest } from "./registry-manifest"
-import { and, eq, notInArray, sql } from "drizzle-orm"
+import { and, count, eq, notInArray, sql } from "drizzle-orm"
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -47,12 +47,19 @@ export async function syncRepositories(): Promise<void> {
 export async function syncRepository(name: string, force = false): Promise<void> {
   if (!force) {
     const [existing] = await db
-      .select({ lastSyncedAt: repositories.lastSyncedAt })
+      .select({ lastSyncedAt: repositories.lastSyncedAt, tagCount: repositories.tagCount })
       .from(repositories)
       .where(eq(repositories.name, name))
       .limit(1)
 
-    if (!isStale(existing?.lastSyncedAt)) return
+    if (!isStale(existing?.lastSyncedAt)) {
+      // Still check if DB is missing rows that the repo record says should exist
+      const [{ value: dbCount }] = await db
+        .select({ value: count() })
+        .from(imageMetadata)
+        .where(eq(imageMetadata.repository, name))
+      if (dbCount === (existing?.tagCount ?? 0)) return
+    }
   }
 
   const tags = await listTags(name)
