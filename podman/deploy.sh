@@ -54,7 +54,6 @@ ok "Env file found: $ENV_FILE"
 REQUIRED_VARS=(
   DATABASE_URL SESSION_SECRET
   REGISTRY_URL REGISTRY_AUTH_TOKEN_REALM
-  REGISTRY_TOKEN_PUBLIC_KEY
   REGISTRY_TOKEN_ISSUER
   AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_BUCKET
   REGISTRY_STORAGE_S3_ACCESSKEY REGISTRY_STORAGE_S3_SECRETKEY
@@ -75,16 +74,6 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
   die "Missing or incomplete variables: ${MISSING[*]}"
 fi
 ok "All ${#REQUIRED_VARS[@]} required variables present"
-
-# ── Write registry cert ───────────────────────────────────────────────────────
-info "Writing registry public key certificate"
-printf "%b\n" "$REGISTRY_TOKEN_PUBLIC_KEY" > "$CERTS_DIR/token.crt"
-chmod 644 "$CERTS_DIR/token.crt"
-CERT_SIZE=$(wc -c < "$CERTS_DIR/token.crt")
-debug "Wrote $CERTS_DIR/token.crt ($CERT_SIZE bytes)"
-debug "Certificate contents preview:"
-debug "$(head -3 "$CERTS_DIR/token.crt" | sed 's/^/      /')"
-ok "Certificate installed"
 
 # ── Install quadlet units ─────────────────────────────────────────────────────
 info "Installing Quadlet units → $QUADLET_DIR"
