@@ -85,13 +85,8 @@ info "Reloading systemd"
 systemctl daemon-reload
 ok "daemon-reload done"
 
-# ── Start pod ─────────────────────────────────────────────────────────────────
-info "Starting pod"
-systemctl enable --now viceregistry-pod.service
-ok "Pod started"
-
-# ── Start database ────────────────────────────────────────────────────────────
-info "Starting database"
+# ── Start services (pod is auto-created by Quadlet) ───────────────────────────
+info "Starting database (pod will be auto-created)"
 systemctl enable --now db.service
 echo -n "    Waiting for postgres to be healthy"
 for i in $(seq 60); do
@@ -127,7 +122,8 @@ done
 # ── Summary ───────────────────────────────────────────────────────────────────
 info "Deploy complete"
 echo
-systemctl status viceregistry-pod.service db.service registry.service app.service --no-pager -l || true
+systemctl status db.service registry.service app.service --no-pager -l || true
+podman pod ps || true
 echo
 echo "  Web UI:      ${PUBLIC_URL:-http://<host>:4321}"
 echo "  Registry:    ${REGISTRY_PUBLIC_HOST:-<host>}:5000"
