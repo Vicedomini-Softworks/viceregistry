@@ -5,6 +5,9 @@ const {
   mockInsert,
   mockValues,
   mockOnConflictDoUpdate,
+  mockOnConflictDoNothing,
+  mockDelete,
+  mockDeleteWhere,
   mockSelect,
   mockLimit,
   mockListRepositories,
@@ -13,8 +16,11 @@ const {
   mockGetJsonBlob,
 } = vi.hoisted(() => {
   const mockOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
-  const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflictDoUpdate }))
+  const mockOnConflictDoNothing = vi.fn().mockResolvedValue(undefined)
+  const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflictDoUpdate, onConflictDoNothing: mockOnConflictDoNothing }))
   const mockInsert = vi.fn(() => ({ values: mockValues }))
+  const mockDeleteWhere = vi.fn().mockResolvedValue(undefined)
+  const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }))
   const mockLimit = vi.fn().mockResolvedValue([])
   const mockWhere = vi.fn(() => ({ limit: mockLimit }))
   const mockFrom = vi.fn(() => ({ where: mockWhere }))
@@ -27,6 +33,9 @@ const {
     mockInsert,
     mockValues,
     mockOnConflictDoUpdate,
+    mockOnConflictDoNothing,
+    mockDelete,
+    mockDeleteWhere,
     mockSelect,
     mockLimit,
     mockListRepositories,
@@ -37,7 +46,7 @@ const {
 })
 
 vi.mock("@/lib/db", () => ({
-  db: { insert: mockInsert, select: mockSelect },
+  db: { insert: mockInsert, select: mockSelect, delete: mockDelete },
 }))
 
 vi.mock("@/lib/schema", () => ({
@@ -93,6 +102,8 @@ describe("contentTypeMediaTypeFromGet", () => {
 beforeEach(() => {
   vi.clearAllMocks()
   mockOnConflictDoUpdate.mockResolvedValue(undefined)
+  mockOnConflictDoNothing.mockResolvedValue(undefined)
+  mockDeleteWhere.mockResolvedValue(undefined)
   mockLimit.mockResolvedValue([])
   mockListRepositories.mockResolvedValue([])
   mockListTags.mockResolvedValue([])
@@ -111,9 +122,10 @@ describe("syncRepositories", () => {
     expect(mockInsert).not.toHaveBeenCalled()
   })
 
-  it("upserts repository rows when names returned", async () => {
+  it("inserts new repos and prunes deleted ones when names returned", async () => {
     mockListRepositories.mockResolvedValue(["repo1", "repo2"])
     await syncRepositories()
+    expect(mockDelete).toHaveBeenCalled()
     expect(mockInsert).toHaveBeenCalled()
     expect(mockValues).toHaveBeenCalledWith(
       expect.arrayContaining([
@@ -121,12 +133,7 @@ describe("syncRepositories", () => {
         expect.objectContaining({ name: "repo2" }),
       ]),
     )
-    expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        target: expect.anything(),
-        set: expect.objectContaining({ lastSyncedAt: expect.any(Date) }),
-      })
-    )
+    expect(mockOnConflictDoNothing).toHaveBeenCalled()
   })
 })
 

@@ -184,7 +184,13 @@ export async function syncRepository(name: string, force = false): Promise<void>
 
 /** Full sync: all repos + their tags. Can be slow for large registries. */
 export async function syncAll(force = false): Promise<void> {
-  await syncRepositories()
   const names = await listRepositories()
+  if (names.length > 0) {
+    await db.delete(repositories).where(notInArray(repositories.name, names))
+    await db
+      .insert(repositories)
+      .values(names.map((name) => ({ name, visibility: "private", lastSyncedAt: new Date(0) })))
+      .onConflictDoNothing()
+  }
   await Promise.allSettled(names.map((name) => syncRepository(name, force)))
 }
