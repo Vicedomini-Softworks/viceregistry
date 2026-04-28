@@ -6,7 +6,8 @@ Image=docker.io/library/postgres:17-alpine
 ContainerName=viceregistry-db
 Pod=viceregistry.pod
 
-EnvFile=/etc/viceregistry/.env
+EnvironmentFile=/etc/viceregistry/.env
+StartWithPod=true
 Environment=POSTGRES_USER=viceregistry
 Environment=POSTGRES_DB=viceregistry
 

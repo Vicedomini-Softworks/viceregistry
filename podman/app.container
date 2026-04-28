@@ -7,7 +7,8 @@ Image=ghcr.io/vicedomini-softworks/viceregistry:latest
 ContainerName=viceregistry-app
 Pod=viceregistry.pod
 
-EnvFile=/etc/viceregistry/.env
+EnvironmentFile=/etc/viceregistry/.env
+StartWithPod=true
 
 [Service]
 # Wait for postgres to be healthy before entrypoint runs migrations

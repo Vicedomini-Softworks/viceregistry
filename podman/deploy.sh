@@ -126,13 +126,6 @@ debug "Local images:"
 podman images --format "    • {{.Repository}}:{{.Tag}} ({{.Size}})"
 ok "All images ready"
 
-# ── Reload systemd ────────────────────────────────────────────────────────────
-info "Reloading systemd daemon"
-systemctl daemon-reload
-debug "Reloaded systemd units:"
-debug "  - $(systemctl list-units --type=service --all --no-legend | grep -E 'viceregistry|app|db|registry' | awk '{print $1}' | sed 's/^/    • /')"
-ok "Systemd daemon reloaded"
-
 # ── Start services (pod is auto-created by Quadlet) ───────────────────────────
 info "Starting database (pod will be auto-created by Quadlet)"
 debug "Enabling and starting db.service"
