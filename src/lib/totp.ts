@@ -19,6 +19,7 @@ export async function verifyTotpCode(secret: string, code: string) {
   const result = await verify({
     secret,
     token: code,
+    window: 1,
   })
   return Boolean(result && "isValid" in result ? result.isValid : false)
 }
