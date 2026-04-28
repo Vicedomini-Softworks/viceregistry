@@ -13,13 +13,15 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
   const { name: repositoryName } = params
   if (!repositoryName) return Response.json({ error: "Missing repository name" }, { status: 400 })
 
+  const name = decodeURIComponent(repositoryName)
+
   const isGlobalAdmin = locals.user?.roles.includes("admin")
   const [directAdmin] = await db
     .select()
     .from(userRepositoryPermissions)
     .where(
       and(
-        eq(userRepositoryPermissions.repositoryName, repositoryName),
+        eq(userRepositoryPermissions.repositoryName, name),
         eq(userRepositoryPermissions.userId, userId),
         eq(userRepositoryPermissions.permission, "admin"),
       ),
@@ -42,15 +44,15 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     return Response.json({ error: "visibility must be public or private" }, { status: 400 })
   }
 
-  const result = await db
+const result = await db
     .update(repositories)
     .set({ visibility: vis })
-    .where(eq(repositories.name, repositoryName))
+    .where(eq(repositories.name, name))
     .returning({ name: repositories.name })
 
   if (result.length === 0) return Response.json({ error: "Repository not found" }, { status: 404 })
 
-  syncRepository(repositoryName).catch((e) => console.error("Repo sync failed:", e))
+  syncRepository(name).catch((e) => console.error("Repo sync failed:", e))
 
   return Response.json({ ok: true, visibility: vis })
 }
