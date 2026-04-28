@@ -428,7 +428,7 @@ describe("registry-client", () => {
       expect(retryOpts.headers["Authorization"]).toBe("Bearer mocked-registry-token")
     })
 
-    it("issues token scoped to the WWW-Authenticate challenge", async () => {
+    it("issues token using service and scope from WWW-Authenticate challenge", async () => {
       const fetchMock = vi.fn()
         .mockResolvedValueOnce(make401("repository:myrepo:pull"))
         .mockResolvedValueOnce({
@@ -442,7 +442,10 @@ describe("registry-client", () => {
       await listTags("myrepo")
 
       expect(mockIssueRegistryToken).toHaveBeenCalledWith(
-        expect.objectContaining({ scope: "repository:myrepo:pull" }),
+        expect.objectContaining({
+          scope: "repository:myrepo:pull",
+          service: "registry.local",
+        }),
       )
     })
 
@@ -507,6 +510,63 @@ describe("registry-client", () => {
       await listRepositories()
 
       expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("falls back to REGISTRY_AUTH_TOKEN_SERVICE env when www-authenticate has no service", async () => {
+      vi.stubEnv("REGISTRY_AUTH_TOKEN_SERVICE", "registry-from-env.local")
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          headers: {
+            get: (k: string) =>
+              k.toLowerCase() === "www-authenticate"
+                ? `Bearer realm="http://localhost:4321/api/auth/token",scope="registry:catalog:env-fallback"`
+                : null,
+          },
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ repositories: [] }),
+          headers: { get: () => null },
+        })
+      vi.stubGlobal("fetch", fetchMock)
+
+      await listRepositories()
+
+      expect(mockIssueRegistryToken).toHaveBeenCalledWith(
+        expect.objectContaining({ service: "registry-from-env.local" }),
+      )
+    })
+
+    it("falls back to hardcoded registry.local when neither service header nor env var set", async () => {
+      vi.unstubAllEnvs()
+      delete process.env.REGISTRY_AUTH_TOKEN_SERVICE
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          headers: {
+            get: (k: string) =>
+              k.toLowerCase() === "www-authenticate"
+                ? `Bearer realm="http://localhost:4321/api/auth/token",scope="registry:catalog:hardcoded-fallback"`
+                : null,
+          },
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ repositories: [] }),
+          headers: { get: () => null },
+        })
+      vi.stubGlobal("fetch", fetchMock)
+
+      await listRepositories()
+
+      expect(mockIssueRegistryToken).toHaveBeenCalledWith(
+        expect.objectContaining({ service: "registry.local" }),
+      )
     })
 
     it("does not retry when issueRegistryToken throws", async () => {

@@ -29,13 +29,17 @@ async function resolveBearerChallenge(wwwAuth: string | null): Promise<string | 
   const cached = tokenCache.get(scope)
   if (cached && cached.expiresAt > Date.now()) return cached.token
 
-  const service = process.env.REGISTRY_AUTH_TOKEN_SERVICE ?? "registry.local"
+  // Extract service from the challenge itself so it always matches what the registry expects,
+  // regardless of how REGISTRY_AUTH_TOKEN_SERVICE is configured in the app env.
+  const serviceMatch = wwwAuth.match(/service="([^"]+)"/)
+  const service = serviceMatch?.[1] ?? process.env.REGISTRY_AUTH_TOKEN_SERVICE ?? "registry.local"
   try {
     const token = await issueRegistryToken({ subject: "system", service, scope })
     // Cache for 4 min — JWT lifetime is 5 min, leave 1 min margin
     tokenCache.set(scope, { token, expiresAt: Date.now() + 4 * 60 * 1000 })
     return token
-  } catch {
+  } catch (e) {
+    console.error(`[registry-client] failed to issue internal token for scope=${scope}:`, e)
     return null
   }
 }
@@ -54,8 +58,13 @@ async function registryFetch(path: string, options?: RequestInit) {
     const token = await resolveBearerChallenge(res.headers.get("www-authenticate"))
     if (token) {
       headers["Authorization"] = `Bearer ${token}`
-      return fetch(url, { ...options, headers })
+      const retried = await fetch(url, { ...options, headers })
+      if (!retried.ok) {
+        console.error(`[registry-client] auth retry failed: ${retried.status} ${retried.statusText} for ${url}`)
+      }
+      return retried
     }
+    console.error(`[registry-client] 401 with no resolvable Bearer challenge for ${url}`)
   }
 
   return res
