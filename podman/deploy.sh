@@ -101,6 +101,20 @@ for f in "$QUADLET_DIR"/*; do
 done
 ok "Quadlet units installed"
 
+# ── Reload systemd to generate service symlinks ───────────────────────────────
+info "Reloading systemd daemon (generates .service symlinks)"
+systemctl daemon-reload
+debug "Checking generated service files..."
+for svc in db registry app viceregistry-pod; do
+  if systemctl list-unit-files --type=service | grep -q "$svc"; then
+    debug "  ✓ $svc.service recognized"
+  else
+    debug "  ⚠ $svc.service not found — checking $QUADLET_DIR"
+    ls -la "$QUADLET_DIR"/*.service 2>/dev/null || debug "    No .service files in $QUADLET_DIR"
+  fi
+done
+ok "Systemd daemon reloaded"
+
 # ── Pull images ───────────────────────────────────────────────────────────────
 info "Pulling container images"
 for img in "$APP_IMAGE" docker.io/library/postgres:17-alpine docker.io/library/registry:2; do
