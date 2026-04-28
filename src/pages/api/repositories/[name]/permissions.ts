@@ -2,6 +2,15 @@ import type { APIRoute } from "astro"
 import { db } from "@/lib/db"
 import { userRepositoryPermissions, users, repositories } from "@/lib/schema"
 import { eq, and } from "drizzle-orm"
+import { writeAuditLog } from "@/lib/audit"
+
+function getClientIp(request: Request): string | null {
+  return (
+    request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
+    request.headers.get("X-Real-IP") ??
+    null
+  )
+}
 
 export const GET: APIRoute = async ({ params, locals }) => {
   const userId = locals.user?.sub
@@ -128,6 +137,13 @@ export const DELETE: APIRoute = async ({ params, request, locals }) => {
   await db
     .delete(userRepositoryPermissions)
     .where(and(eq(userRepositoryPermissions.repositoryName, repositoryName), eq(userRepositoryPermissions.userId, targetUserId)))
+
+  writeAuditLog({
+    userId,
+    action: "remove_permission",
+    resource: `${repositoryName}:${targetUserId}`,
+    ipAddress: getClientIp(request),
+  })
 
   return Response.json({ ok: true })
 }

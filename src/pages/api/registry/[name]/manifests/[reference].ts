@@ -3,6 +3,15 @@ import { getManifest, getManifestDigest, deleteManifest } from "@/lib/registry-c
 import { db } from "@/lib/db"
 import { imageMetadata, repositories } from "@/lib/schema"
 import { and, eq, sql } from "drizzle-orm"
+import { writeAuditLog } from "@/lib/audit"
+
+function getClientIp(request: Request): string | null {
+  return (
+    request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
+    request.headers.get("X-Real-IP") ??
+    null
+  )
+}
 
 export const GET: APIRoute = async ({ params }) => {
   const { name, reference } = params
@@ -19,11 +28,17 @@ export const GET: APIRoute = async ({ params }) => {
   })
 }
 
-export const DELETE: APIRoute = async ({ params, locals }) => {
+export const DELETE: APIRoute = async ({ params, locals, request }) => {
   const { name, reference } = params
   if (!name || !reference) return Response.json({ error: "Missing params" }, { status: 400 })
 
   if (!locals.user?.roles.includes("admin")) {
+    writeAuditLog({
+      userId: locals.user?.sub ?? null,
+      action: "delete_image_denied",
+      resource: `${name}:${reference}`,
+      ipAddress: getClientIp(request),
+    })
     return Response.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -39,6 +54,12 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
 
   const res = await deleteManifest(name, digest)
   if (!res.ok && res.status !== 202) {
+    writeAuditLog({
+      userId: locals.user!.sub,
+      action: "delete_image_failed",
+      resource: `${name}:${reference}`,
+      ipAddress: getClientIp(request),
+    })
     return Response.json({ error: "Failed to delete manifest" }, { status: res.status })
   }
 
@@ -62,6 +83,13 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
     .update(repositories)
     .set({ tagCount: count })
     .where(eq(repositories.name, name))
+
+  writeAuditLog({
+    userId: locals.user!.sub,
+    action: "delete_image",
+    resource: `${name}:${reference}`,
+    ipAddress: getClientIp(request),
+  })
 
   return Response.json({ ok: true })
 }

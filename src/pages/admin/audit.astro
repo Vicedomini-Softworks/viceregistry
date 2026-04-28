@@ -1,0 +1,61 @@
+---
+export const prerender = false
+import AppLayout from "@/layouts/app.astro"
+import AuditTable from "@/components/admin/AuditTable"
+import { Button } from "@/components/ui/button"
+import { db } from "@/lib/db"
+import { auditLog } from "@/lib/schema"
+import { desc, sql } from "drizzle-orm"
+
+const user = Astro.locals.user
+if (!user) return Astro.redirect("/login")
+if (!user.roles.includes("admin")) return Astro.redirect("/dashboard")
+
+const limit = 50
+const logs = await db
+  .select({
+    id: auditLog.id,
+    action: auditLog.action,
+    resource: auditLog.resource,
+    ipAddress: auditLog.ipAddress,
+    createdAt: auditLog.createdAt,
+    userId: auditLog.userId,
+  })
+  .from(auditLog)
+  .orderBy(desc(auditLog.createdAt))
+  .limit(limit)
+
+const [{ count }] = await db
+  .select({ count: sql<number>`count(*)::int` })
+  .from(auditLog)
+
+const actions = await db
+  .select({ action: auditLog.action })
+  .from(auditLog)
+  .groupBy(auditLog.action)
+---
+
+<AppLayout title="Audit Log">
+  <div class="flex flex-col gap-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold">Audit Log</h1>
+        <p class="text-sm text-muted-foreground">{count} total entries</p>
+      </div>
+      <div class="flex gap-2">
+        <Button variant="outline" size="sm" id="exportBtn">
+          Export CSV
+        </Button>
+      </div>
+    </div>
+
+    <AuditTable client:load initialLogs={logs} actions={actions.map(a => a.action)} />
+  </div>
+
+  <script>
+    document.getElementById("exportBtn")?.addEventListener("click", () => {
+      const url = "/api/admin/audit?format=csv&limit=1000"
+      window.open(url, "_blank")
+    })
+  </script>
+</AppLayout>

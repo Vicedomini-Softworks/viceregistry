@@ -92,9 +92,29 @@ async function assignRepositoryOwner(repositoryName: string, userId: string, use
     })
 }
 
-async function handleTokenRequest(username: string, password: string, service: string, scope: string): Promise<Response> {
+function getClientIp(request: Request): string | null {
+  return (
+    request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
+    request.headers.get("X-Real-IP") ??
+    null
+  )
+}
+
+async function handleTokenRequest(
+  username: string,
+  password: string,
+  service: string,
+  scope: string,
+  ipAddress: string | null,
+): Promise<Response> {
   if (!username || !password) {
     if (process.env.DEBUG === "true") console.error("no username or password")
+    writeAuditLog({
+      userId: null,
+      action: "token_request_failed",
+      resource: "no_credentials",
+      ipAddress,
+    })
     return new Response(JSON.stringify({ errors: [{ code: "UNAUTHORIZED", message: "authentication required" }] }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -105,6 +125,12 @@ async function handleTokenRequest(username: string, password: string, service: s
 
   if (!user || !user.isActive) {
     if (process.env.DEBUG === "true") console.error("user not found or not active")
+    writeAuditLog({
+      userId: user?.id ?? null,
+      action: "token_request_failed",
+      resource: "user_not_found_or_inactive",
+      ipAddress,
+    })
     return new Response(JSON.stringify({ errors: [{ code: "UNAUTHORIZED", message: "invalid credentials" }] }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -133,6 +159,12 @@ async function handleTokenRequest(username: string, password: string, service: s
 
   if (!isAuthenticated) {
     if (process.env.DEBUG === "true") console.error("invalid credentials")
+    writeAuditLog({
+      userId: user.id,
+      action: "token_request_failed",
+      resource: "invalid_password",
+      ipAddress,
+    })
     return new Response(JSON.stringify({ errors: [{ code: "UNAUTHORIZED", message: "invalid credentials" }] }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -159,6 +191,13 @@ async function handleTokenRequest(username: string, password: string, service: s
 
   const token = await issueRegistryToken({ subject: username, service, scope: grantedScope })
 
+  writeAuditLog({
+    userId: user.id,
+    action: "token_issued",
+    resource: scope || "*",
+    ipAddress,
+  })
+
   return Response.json({
     token,
     access_token: token,
@@ -170,6 +209,7 @@ async function handleTokenRequest(username: string, password: string, service: s
 export const GET: APIRoute = async ({ request, url }) => {
   const service = url.searchParams.get("service") ?? ""
   const scope = url.searchParams.get("scope") ?? ""
+  const ipAddress = getClientIp(request)
 
   const authHeader = request.headers.get("Authorization") ?? ""
   const base64 = authHeader.replace(/^Basic\s+/i, "")
@@ -187,6 +227,12 @@ export const GET: APIRoute = async ({ request, url }) => {
     password = decoded.slice(colonIdx + 1)
   } catch {
     console.error("error decoding basic auth")
+    writeAuditLog({
+      userId: null,
+      action: "token_request_failed",
+      resource: "basic_auth_decode_error",
+      ipAddress,
+    })
     return new Response(JSON.stringify({ errors: [{ code: "UNAUTHORIZED", message: "authentication required" }] }), {
       status: 401,
       headers: {
@@ -196,7 +242,7 @@ export const GET: APIRoute = async ({ request, url }) => {
     })
   }
 
-  return handleTokenRequest(username, password, service, scope)
+  return handleTokenRequest(username, password, service, scope, ipAddress)
 }
 
 export const POST: APIRoute = async ({ request }) => {
@@ -216,6 +262,7 @@ export const POST: APIRoute = async ({ request }) => {
   const scope = body.get("scope") ?? ""
   const username = body.get("username") ?? ""
   const password = body.get("password") ?? ""
+  const ipAddress = getClientIp(request)
 
   if (process.env.DEBUG === "true") console.log("POST token request, grant_type:", grantType, "scope:", scope)
 
@@ -226,5 +273,5 @@ export const POST: APIRoute = async ({ request }) => {
     })
   }
 
-  return handleTokenRequest(username, password, service, scope)
+  return handleTokenRequest(username, password, service, scope, ipAddress)
 }
