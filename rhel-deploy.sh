@@ -7,19 +7,6 @@
 # Usage: sudo ./rhel-deploy.sh
 #
 # Prerequisites: git, podman, systemctl.
-#
-# The script will:
-#   1. Ensure the source repo exists under /opt/viceregistry.
-#   2. Copy the podman sub‑directory (containing deploy.sh and other
-#      Quadlet units) to a temporary location.
-#   3. Move deploy.sh into /opt/viceregistry/podman.
-#   4. Execute that deploy script.
-#
-# Note: The deployment will pull the application container from GHCR. If you
-# prefer a local build, modify the APP_IMAGE in podman/deploy.sh accordingly.
-#
-# The script keeps all user‑configurable files under /etc/viceregistry so the
-# result is idempotent.
 
 set -euo pipefail
 
@@ -53,10 +40,23 @@ fi
 # Ensure the target podman dir exists
 mkdir -p "$PODMAN_DIR"
 
-# No copy needed: pods, containers, volumes, and deploy.sh are already
-# present in $TARGET_DIR/podman. The original podman/deploy.sh will install
-# the Quadlet units from there.
+# Copy unit files into the podman directory – overwrite with warning
+chmod +x "$TARGET_DIR/podman/deploy.sh"
 
+for f in "$PODMAN_DIR"/*.container "$PODMAN_DIR"/*.pod "$PODMAN_DIR"/*.volume "$PODMAN_DIR"/deploy.sh; do
+    [[ -e "$f" ]] || continue
+    dst="$TARGET_DIR/podman/${f##*/}"
+    if [[ "$f" == "$dst" ]]; then
+        # same file, nothing to do
+        continue
+    fi
+    if [[ -e "$dst" ]]; then
+        echo "    Overwriting $dst"
+    fi
+    cp -f "$f" "$dst"
+    echo "    Copied ${f##*/} to $dst"
+
+done
 
 # Run the real deploy script
 echo 'Starting podman deployment…'
