@@ -128,8 +128,8 @@ ok "All images ready"
 
 # ── Start services (pod is auto-created by Quadlet) ───────────────────────────
 info "Starting database (pod will be auto-created by Quadlet)"
-debug "Enabling and starting db.service"
-systemctl enable --now db.service
+debug "Starting db.service"
+systemctl start db.service
 debug "Waiting for postgres to become healthy (max 120s)"
 echo -n "    "
 for i in $(seq 60); do
@@ -145,8 +145,8 @@ done
 
 # ── Start registry ────────────────────────────────────────────────────────────
 info "Starting Docker Registry v2"
-debug "Enabling and starting registry.service"
-systemctl enable --now registry.service
+debug "Starting registry.service"
+systemctl start registry.service
 debug "Registry container should be starting..."
 sleep 2
 if podman ps --filter "name=viceregistry-registry" --format "{{.Status}}" | grep -q "Up"; then
@@ -158,9 +158,9 @@ fi
 
 # ── Start app ─────────────────────────────────────────────────────────────────
 info "Starting ViceRegistry app (entrypoint runs migrations + seed)"
-debug "Enabling and starting app.service"
+debug "Starting app.service"
 debug "Note: App entrypoint will wait for DB, then run migrations and seed"
-systemctl enable --now app.service
+systemctl start app.service
 
 echo -n "    Waiting for app to become healthy"
 for i in $(seq 30); do
@@ -234,3 +234,5 @@ echo "  Re-deploy:   sudo $0"
 echo "  Key rotation: update REGISTRY_TOKEN_* in .env then re-run deploy"
 echo "  Stop:        sudo systemctl stop app.service registry.service db.service"
 echo "  Start:       sudo systemctl start app.service registry.service db.service"
+echo "  Restart:     sudo systemctl restart app.service registry.service db.service"
+echo "  Autostart:   services auto-start when pod starts (StartWithPod=true)"
