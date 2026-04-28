@@ -97,7 +97,7 @@ describe("issueRegistryToken", () => {
     vi.stubEnv("REGISTRY_TOKEN_PRIVATE_KEY", "")
     await expect(
       issueRegistryToken({ subject: "alice", service: "svc", scope: "repository:r:pull" }),
-    ).rejects.toThrow("REGISTRY_TOKEN_PRIVATE_KEY env var is required")
+    ).rejects.toThrow("REGISTRY_TOKEN_PRIVATE_KEY_FILE or REGISTRY_TOKEN_PRIVATE_KEY env var required")
   })
 
   it("produces access: [] for empty scope", async () => {
