@@ -1,3 +1,5 @@
+import { issueRegistryToken } from "./registry-token"
+
 export const MANIFEST_ACCEPT =
   "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json"
 
@@ -15,15 +17,48 @@ export function parseContentLengthHeader(value: string | null | undefined): numb
   return parseInt(value, 10)
 }
 
+const tokenCache = new Map<string, { token: string; expiresAt: number }>()
+
+/** Parses a Bearer WWW-Authenticate challenge, self-issues a registry JWT, caches it. */
+async function resolveBearerChallenge(wwwAuth: string | null): Promise<string | null> {
+  if (!wwwAuth) return null
+  const scopeMatch = wwwAuth.match(/scope="([^"]+)"/)
+  const scope = scopeMatch?.[1]
+  if (!scope) return null
+
+  const cached = tokenCache.get(scope)
+  if (cached && cached.expiresAt > Date.now()) return cached.token
+
+  const service = process.env.REGISTRY_AUTH_TOKEN_SERVICE ?? "registry.local"
+  try {
+    const token = await issueRegistryToken({ subject: "system", service, scope })
+    // Cache for 4 min — JWT lifetime is 5 min, leave 1 min margin
+    tokenCache.set(scope, { token, expiresAt: Date.now() + 4 * 60 * 1000 })
+    return token
+  } catch {
+    return null
+  }
+}
+
 async function registryFetch(path: string, options?: RequestInit) {
   const url = `${process.env.REGISTRY_URL ?? "http://localhost:5000"}/v2${path}`
-  return fetch(url, {
-    ...options,
-    headers: {
-      Accept: MANIFEST_ACCEPT,
-      ...(options?.headers ?? {}),
-    },
-  })
+  const headers: Record<string, string> = {
+    Accept: MANIFEST_ACCEPT,
+    ...(options?.headers as Record<string, string> ?? {}),
+  }
+
+  const res = await fetch(url, { ...options, headers })
+
+  // Docker Registry v2 token auth: on 401, obtain a Bearer token and retry once
+  if (res.status === 401) {
+    const token = await resolveBearerChallenge(res.headers.get("www-authenticate"))
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`
+      return fetch(url, { ...options, headers })
+    }
+  }
+
+  return res
 }
 
 export async function listRepositories(): Promise<string[]> {
@@ -53,8 +88,7 @@ export async function getJsonBlob(
   digest: string,
   maxBytes: number = CONFIG_BLOB_MAX_BYTES,
 ): Promise<Record<string, unknown> | null> {
-  const url = `${process.env.REGISTRY_URL ?? "http://localhost:5000"}/v2/${name}/blobs/${digest}`
-  const res = await fetch(url, {
+  const res = await registryFetch(`/${name}/blobs/${digest}`, {
     headers: { Accept: BLOB_ACCEPT },
   })
   if (!res.ok) return null

@@ -174,7 +174,7 @@ describe("middleware", () => {
       const { ctx } = makeCtx("/api/registry/myrepo/manifests/x", {
         method: "DELETE",
         sessionToken: "tok",
-        user: { sub: "u1" } as { sub: string; roles?: string[] },
+        user: { sub: "u1" } as unknown as { roles: string[] },
       })
       const res = await (onRequest as Function)(ctx, next)
       expect(res.status).toBe(403)
@@ -228,7 +228,7 @@ describe("middleware", () => {
     it("returns 403 JSON for user without roles on /api/users (no throw from roles check)", async () => {
       const { ctx } = makeCtx("/api/users", {
         sessionToken: "tok",
-        user: { sub: "u1" } as { sub: string; roles?: string[] },
+        user: { sub: "u1" } as unknown as { roles: string[] },
       })
       const res = await (onRequest as Function)(ctx, next)
       expect(res.status).toBe(403)

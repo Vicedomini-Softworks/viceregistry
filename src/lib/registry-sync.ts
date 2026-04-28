@@ -162,7 +162,7 @@ export async function syncRepository(name: string, force = false): Promise<void>
     )
 
     for (const result of results) {
-      if (!result.value) continue
+      if (result.status !== "fulfilled" || !result.value) continue
       const v = result.value
       totalSize += v.totalSize
       metaRows.push({
