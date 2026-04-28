@@ -16,11 +16,10 @@ export default function SyncButton() {
         const err = await res.json().catch(() => ({}))
         throw new Error((err as { error?: string }).error ?? "Sync failed")
       }
-      toast.success("Registry sync complete")
-      window.location.reload()
+      toast.success("Registry synced", { description: "Reloading…", duration: 1500 })
+      setTimeout(() => window.location.reload(), 1200)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Sync failed")
-    } finally {
       setSyncing(false)
     }
   }
