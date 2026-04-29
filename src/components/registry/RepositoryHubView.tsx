@@ -206,13 +206,12 @@ export default function RepositoryHubView({
             </p>
           )}
 
-          {overview.html.length > 0 && (
-            <div
-              className="repository-overview-prose min-h-32 max-w-3xl rounded-md border border-border/60 bg-card/30 p-4 text-sm"
-              // eslint-disable-next-line react/no-danger -- sanitized on server
-              dangerouslySetInnerHTML={{ __html: overview.html }}
-            />
-          )}
+           {overview.html.length > 0 && (
+             <div
+               className="repository-overview-prose min-h-32 max-w-3xl rounded-md border border-border/60 bg-card/30 p-4 text-sm"
+               dangerouslySetInnerHTML={{ __html: overview.html }}
+             />
+           )}
 
           <p className="text-xs text-muted-foreground">
             {overview.source === "db" && "Showing custom repository overview (markdown)."}

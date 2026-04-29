@@ -49,7 +49,7 @@ const actions = await db
       </div>
     </div>
 
-    <AuditTable client:load initialLogs={logs} actions={actions.map(a => a.action)} />
+    <AuditTable client:load initialLogs={logs} />
   </div>
 
   <script>

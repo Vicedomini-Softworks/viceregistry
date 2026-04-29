@@ -76,8 +76,8 @@ export default function LoginForm() {
       }
 
       throw new Error((await verifyRes.json()).error || "Verification failed")
-    } catch (err: any) {
-      setError(err.message || "Passkey login failed")
+    } catch (err) {
+      setError((err as { message?: string }).message || "Passkey login failed")
     } finally {
       setLoading(false)
     }
