@@ -47,10 +47,19 @@ jobs:
             type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=sha,format=short
 
-      - name: Build and push
+      - name: Build image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          push: false
+          load: true
+          tags: viceregistry:local-build
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Push tags sequentially
+        run: |
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            docker tag viceregistry:local-build "$tag"
+            docker push "$tag"
+          done <<< "${{ steps.meta.outputs.tags }}"
