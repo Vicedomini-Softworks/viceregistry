@@ -1,7 +1,7 @@
 import postgres from "postgres"
 import { drizzle } from "drizzle-orm/postgres-js"
 import * as schema from "../src/lib/schema"
-import { eq } from "drizzle-orm"
+
 import bcrypt from "bcryptjs"
 
 const sql = postgres(process.env.DATABASE_URL!)

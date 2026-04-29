@@ -12,7 +12,8 @@ async function generateBadges() {
   try {
     const covSummary = JSON.parse(fs.readFileSync(path.join(process.cwd(), "coverage", "coverage-summary.json"), "utf-8"))
     coveragePct = covSummary.total.lines.pct
-  } catch (e) {
+  } catch (_e) {
+    // eslint-disable-next-line no-console -- warn non error
     console.warn("Could not read coverage summary, defaulting to 0%")
   }
 
@@ -25,7 +26,8 @@ async function generateBadges() {
     let timeout = 0
     let noCoverage = 0
 
-    for (const file of Object.values<any>(mutReport.files)) {
+    const files = Object.values(mutReport.files) as Array<{ mutants: Array<{ status: string }> }>
+    for (const file of files) {
       for (const mutant of file.mutants) {
         if (mutant.status === "Killed") killed++
         else if (mutant.status === "Survived") survived++
@@ -36,7 +38,7 @@ async function generateBadges() {
 
     const total = killed + timeout + survived + noCoverage
     mutationPct = total > 0 ? ((killed + timeout) / total) * 100 : 0
-  } catch (e) {
+  } catch (_e) {
     console.warn("Could not read mutation report, defaulting to 0%")
   }
 

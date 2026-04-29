@@ -23,10 +23,9 @@ interface AuditLog {
 
 interface Props {
   initialLogs: AuditLog[]
-  actions: string[]
 }
 
-export default function AuditTable({ initialLogs, actions }: Props) {
+export default function AuditTable({ initialLogs }: Props) {
   const [logs, setLogs] = useState(initialLogs)
   const [action, setAction] = useState("")
   const [resource, setResource] = useState("")
@@ -55,7 +54,7 @@ export default function AuditTable({ initialLogs, actions }: Props) {
   useEffect(() => {
     const debounce = setTimeout(search, 300)
     return () => clearTimeout(debounce)
-  }, [action, resource, ipAddress])
+  }, [action, resource, ipAddress, search])
 
   return (
     <div className="flex flex-col gap-4">

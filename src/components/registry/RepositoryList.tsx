@@ -67,11 +67,11 @@ export default function RepositoryList({ repositories, registryHost }: Props) {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!query) {
+    if (query) {
+      debounceRef.current = setTimeout(() => search(query), 250)
+    } else {
       setResults(null)
-      return
     }
-    debounceRef.current = setTimeout(() => search(query), 250)
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
