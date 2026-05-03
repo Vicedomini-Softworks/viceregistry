@@ -9,6 +9,7 @@ import {
   userRepositoryPermissions,
   organizations,
   organizationRepositories,
+  organizationMembers,
 } from "@/lib/schema"
 import { issueRegistryToken, computeGrantedScope } from "@/lib/registry-token"
 import { eq, and } from "drizzle-orm"
@@ -70,6 +71,54 @@ async function assignRepositoryOwner(repositoryName: string, userId: string, use
         })
       return
     }
+
+    // Organization doesn't exist — create it if user has global admin/push rights
+    const roleRows = await db
+      .select({ name: roles.name })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(eq(userRoles.userId, userId))
+    const roleNames = roleRows.map((r) => r.name)
+    const isAdmin = roleNames.includes("admin") || roleNames.includes("super admin")
+    const canPush = isAdmin || roleNames.includes("push")
+
+    if (canPush) {
+      // Create the organization
+      const [newOrg] = await db
+        .insert(organizations)
+        .values({
+          name: namespace,
+          slug: namespace,
+          ownerId: userId,
+        })
+        .returning({ id: organizations.id })
+
+      if (newOrg) {
+        // Make user owner of the new org
+        await db
+          .insert(organizationMembers)
+          .values({
+            organizationId: newOrg.id,
+            userId,
+            role: "owner",
+          })
+          .onConflictDoNothing({
+            target: [organizationMembers.organizationId, organizationMembers.userId],
+          })
+
+        // Link repo to org
+        await db
+          .insert(organizationRepositories)
+          .values({
+            organizationId: newOrg.id,
+            repositoryName,
+          })
+          .onConflictDoNothing({
+            target: [organizationRepositories.organizationId, organizationRepositories.repositoryName],
+          })
+      }
+    }
+    return
   }
 
   const [ownerUser] = await db

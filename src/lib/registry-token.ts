@@ -140,13 +140,26 @@ export async function computeGrantedScope(
             .limit(1)
 
           if (orgAccess.length === 0) {
-            if (process.env.DEBUG === "true") {
-              console.log("[AUTH] Scope denied: not org member", {
-                namespace,
-                userId
-              })
+            // Organization doesn't exist or user is not a member
+            // If user has global push/admin rights, allow repository creation
+            if (!canPush && !isAdmin) {
+              if (process.env.DEBUG === "true") {
+                console.log("[AUTH] Scope denied: not org member", {
+                  namespace,
+                  userId
+                })
+              }
+              return ""
             }
-            return ""
+            // Allow push — repo will be created under the org namespace
+            const granted = requestedActions.filter((a) => {
+              if (a === "pull") return canPull
+              if (a === "push") return canPush
+              if (a === "*" || a === "delete") return isAdmin
+              return false
+            })
+            if (granted.length === 0) return ""
+            return `${type}:${name}:${granted.join(",")}`
           }
 
           const { role: oRole, orgId } = orgAccess[0]
