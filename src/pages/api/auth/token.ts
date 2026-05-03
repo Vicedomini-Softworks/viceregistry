@@ -124,7 +124,14 @@ async function handleTokenRequest(
   const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1)
 
   if (!user || !user.isActive) {
-    if (process.env.DEBUG === "true") console.error("user not found or not active")
+    if (process.env.DEBUG === "true") {
+      console.error("[AUTH] User lookup failed:", {
+        username,
+        userId: user?.id,
+        isActive: user?.isActive,
+        reason: user ? "inactive" : "not_found"
+      })
+    }
     writeAuditLog({
       userId: user?.id ?? null,
       action: "token_request_failed",
@@ -158,7 +165,9 @@ async function handleTokenRequest(
   }
 
   if (!isAuthenticated) {
-    if (process.env.DEBUG === "true") console.error("invalid credentials")
+    if (process.env.DEBUG === "true") {
+      console.error("[AUTH] Password verification failed for user:", user.id)
+    }
     writeAuditLog({
       userId: user.id,
       action: "token_request_failed",
@@ -179,6 +188,17 @@ async function handleTokenRequest(
   const roleNames = roleRows.map((r) => r.name)
 
   const grantedScope = await computeGrantedScope(scope, roleNames, user.id, tokenConstraints)
+
+  if (process.env.DEBUG === "true") {
+    console.log("[AUTH] Scope computed:", {
+      requested: scope,
+      granted: grantedScope,
+      roleNames,
+      hasPush: hasPushInScope(grantedScope),
+      hasPull: hasPullInScope(grantedScope),
+      constraints: tokenConstraints
+    })
+  }
 
   if (hasPushInScope(grantedScope)) {
     if (process.env.DEBUG === "true") console.log("push scope found")
@@ -217,7 +237,14 @@ export const GET: APIRoute = async ({ request, url }) => {
   let username = ""
   let password = ""
 
-  if (process.env.DEBUG === "true") console.log("GET token request, scope:", scope)
+  if (process.env.DEBUG === "true") {
+    console.log("[AUTH] Token request:", {
+      method: "GET",
+      service,
+      scope,
+      ipAddress,
+    })
+  }
 
   try {
     const decoded = atob(base64)

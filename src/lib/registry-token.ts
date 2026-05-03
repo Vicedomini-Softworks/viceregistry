@@ -100,6 +100,12 @@ export async function computeGrantedScope(
   // 1. Check Token Constraints first
   if (constraints) {
     if (constraints.repositoryName && constraints.repositoryName !== name) {
+      if (process.env.DEBUG === "true") {
+        console.log("[AUTH] Scope denied: repository constraint mismatch", {
+          constraint: constraints.repositoryName,
+          requested: name
+        })
+      }
       return ""
     }
   }
@@ -133,11 +139,27 @@ export async function computeGrantedScope(
             .where(and(eq(organizations.slug, namespace), eq(organizationMembers.userId, userId)))
             .limit(1)
 
-          if (orgAccess.length === 0) return ""
+          if (orgAccess.length === 0) {
+            if (process.env.DEBUG === "true") {
+              console.log("[AUTH] Scope denied: not org member", {
+                namespace,
+                userId
+              })
+            }
+            return ""
+          }
 
           const { role: oRole, orgId } = orgAccess[0]
 
-          if (constraints?.organizationId && constraints.organizationId !== orgId) return ""
+          if (constraints?.organizationId && constraints.organizationId !== orgId) {
+            if (process.env.DEBUG === "true") {
+              console.log("[AUTH] Scope denied: organization constraint mismatch", {
+                constraint: constraints.organizationId,
+                actual: orgId
+              })
+            }
+            return ""
+          }
 
           // Org role is authoritative — overwrite all global role flags
           if (
@@ -149,6 +171,12 @@ export async function computeGrantedScope(
             oRole !== "viewer" &&
             oRole !== "pull"
           ) {
+            if (process.env.DEBUG === "true") {
+              console.log("[AUTH] Scope denied: invalid org role", {
+                role: oRole,
+                namespace
+              })
+            }
             return ""
           }
           if (oRole === "owner" || oRole === "admin") {
@@ -163,6 +191,15 @@ export async function computeGrantedScope(
             isAdmin = false
             canPush = false
             canPull = true
+          }
+
+          if (process.env.DEBUG === "true") {
+            console.log("[AUTH] Org role evaluated:", {
+              role: oRole,
+              isAdmin,
+              canPush,
+              canPull
+            })
           }
         }
         // else: user's own namespace — global role flags already correct
@@ -222,6 +259,19 @@ export async function computeGrantedScope(
     return false
   })
 
-  if (granted.length === 0) return ""
+  if (granted.length === 0) {
+    if (process.env.DEBUG === "true") {
+      console.log("[AUTH] Scope denied: no actions granted", {
+        requestedActions,
+        canPull,
+        canPush,
+        isAdmin
+      })
+    }
+    return ""
+  }
+  if (process.env.DEBUG === "true") {
+    console.log("[AUTH] Scope granted:", `${type}:${name}:${granted.join(",")}`)
+  }
   return `${type}:${name}:${granted.join(",")}`
 }

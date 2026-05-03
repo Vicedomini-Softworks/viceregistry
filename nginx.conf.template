@@ -5,6 +5,12 @@ events {
 http {
     client_max_body_size 0;
 
+    log_format registry '$remote_addr - $remote_user [$time_local] '
+                        '"$request" $status $body_bytes_sent '
+                        '"$http_referer" "$http_user_agent" '
+                        'upstream:$upstream_addr upstream_status:$upstream_status '
+                        'rt=$upstream_response_time';
+
     server {
         listen ${PORT};
 
@@ -12,6 +18,8 @@ http {
         # The registry at :5000 handles auth; we just proxy through
         location /v2/ {
             client_max_body_size 50G;
+
+            access_log /var/log/nginx/registry.log registry;
 
             proxy_pass ${REGISTRY_URL};
 

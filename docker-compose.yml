@@ -44,7 +44,7 @@ services:
       - "5000:5000"
     environment:
       REGISTRY_AUTH: token
-      REGISTRY_AUTH_TOKEN_REALM: http://localhost:4321/api/auth/token
+      REGISTRY_AUTH_TOKEN_REALM: ${REGISTRY_AUTH_TOKEN_REALM:-${PUBLIC_URL}/api/auth/token}
       REGISTRY_AUTH_TOKEN_SERVICE: registry.local
       REGISTRY_AUTH_TOKEN_ISSUER: viceregistry
       REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /certs/token.crt
@@ -57,7 +57,7 @@ services:
       REGISTRY_STORAGE_S3_REGIONENDPOINT: http://minio:9000
       REGISTRY_STORAGE_S3_FORCEPATHSTYLE: "true"
       REGISTRY_STORAGE_DELETE_ENABLED: "true"
-      REGISTRY_LOG_LEVEL: warn
+      REGISTRY_LOG_LEVEL: ${REGISTRY_LOG_LEVEL:-info}
     volumes:
       - ./keys/registry-token.crt:/certs/token.crt:ro
     depends_on:
